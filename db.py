@@ -730,4 +730,3 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
-
