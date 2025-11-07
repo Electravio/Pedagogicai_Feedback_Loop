@@ -1,17 +1,25 @@
 # app.py
-from db import init_db
 import streamlit as st
-from main import init_db, upgrade_db  # Add these imports
+import os  # Add this import
+from db import init_db, DB_FILE  # Import DB_FILE from db module
+from main import init_db as main_init_db, upgrade_db  # Rename to avoid conflict
+
 
 # Initialize database
 init_db()
 upgrade_db()
+
+st.write("Current working directory:", os.getcwd())
+st.write("Database file path:", DB_FILE)
+st.write("Database file exists:", os.path.exists(DB_FILE))
+
 
 st.set_page_config(
     page_title="Pedagogical Feedback Loop",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 
 # ... rest of your app.py code
 
