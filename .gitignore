@@ -1,0 +1,5 @@
+users_chats.db
+__pycache__/
+*.pyc
+.idea/
+.DS_Store
