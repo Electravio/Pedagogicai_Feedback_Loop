@@ -9,9 +9,9 @@ from main import init_db as main_init_db, upgrade_db  # Rename to avoid conflict
 init_db()
 upgrade_db()
 
-st.write("Current working directory:", os.getcwd())
-st.write("Database file path:", DB_FILE)
-st.write("Database file exists:", os.path.exists(DB_FILE))
+#st.write("Current working directory:", os.getcwd())
+#st.write("Database file path:", DB_FILE)
+#st.write("Database file exists:", os.path.exists(DB_FILE))
 
 
 st.set_page_config(
@@ -57,3 +57,4 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
