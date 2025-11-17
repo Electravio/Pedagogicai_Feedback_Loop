@@ -752,6 +752,9 @@ def create_interactive_analytics(df: pd.DataFrame):
             else:
                 st.info("No intervention data")
 
+#filtered_df
+filtered_df = filtered_df if 'filtered_df' in locals() else pd.DataFrame()
+
         # Cheating analysis table
 if not filtered_df.empty:
     st.subheader("Risk Assessment Summary")
@@ -1122,4 +1125,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
