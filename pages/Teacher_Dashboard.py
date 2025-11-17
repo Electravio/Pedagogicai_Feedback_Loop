@@ -753,19 +753,25 @@ def create_interactive_analytics(df: pd.DataFrame):
                 st.info("No intervention data")
 
         # Cheating analysis table
-        if not filtered_df.empty:
-            st.subheader("Risk Assessment Summary")
-            cheating_analysis = filtered_df.groupby('student')['cheating_flag'].agg(['count', 'sum']).rename(
-                columns={'sum': 'flagged_count'})
-            if not cheating_analysis.empty:
-                cheating_analysis['flag_rate'] = (
-                        cheating_analysis['flagged_count'] / cheating_analysis['count']).round(3)
-                st.dataframe(cheating_analysis.sort_values('flag_rate', ascending=False).head(10),
-                             use_container_width=True)
-                st.caption("Students with highest risk indicators (top 10)")
-            else:
-                st.info("No risk assessment data")
+if not filtered_df.empty:
+    st.subheader("Risk Assessment Summary")
+    cheating_analysis = filtered_df.groupby('student')['cheating_flag'].agg(['count', 'sum']).rename(
+        columns={'sum': 'flagged_count'})
 
+    if not cheating_analysis.empty:
+        # SAFE flag rate calculation (no division errors)
+        cheating_analysis['flag_rate'] = (
+            cheating_analysis['flagged_count'].astype(float)
+            / cheating_analysis['count'].replace(0, float('nan'))
+        ).fillna(0).round(3)
+
+        st.dataframe(
+            cheating_analysis.sort_values('flag_rate', ascending=False).head(10),
+            use_container_width=True
+        )
+        st.caption("Students with highest risk indicators (top 10)")
+    else:
+        st.info("No risk assessment data")
 
 def export_thesis_data():
     """Export comprehensive research data"""
@@ -1116,3 +1122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
