@@ -72,27 +72,29 @@ def init_db():
 
     # CHATS TABLE
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS chats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            student TEXT NOT NULL,
-            course_id INTEGER,  -- NEW: Link to course
-            question TEXT NOT NULL,
-            ai_response TEXT,
-            teacher_feedback TEXT DEFAULT '',
-            bloom_level TEXT DEFAULT '',
-            cognitive_state TEXT DEFAULT '',
-            risk_level TEXT DEFAULT '',
-            cheating_flag TEXT DEFAULT '',
-            ai_emotion TEXT DEFAULT '',
-            ai_confusion TEXT DEFAULT '',
-            ai_dependency TEXT DEFAULT '',
-            ai_intervention TEXT DEFAULT '',
-            confusion_score INTEGER DEFAULT 0,
-            override_cycle INTEGER DEFAULT 0,
-            FOREIGN KEY (course_id) REFERENCES courses (id)
-        )
-    """)
+    CREATE TABLE IF NOT EXISTS chats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        student TEXT NOT NULL,
+        course_id INTEGER,
+        question TEXT NOT NULL,
+        ai_response TEXT,
+        teacher_feedback TEXT DEFAULT '',
+        bloom_level TEXT DEFAULT '',
+        cognitive_state TEXT DEFAULT '',
+        risk_level TEXT DEFAULT '',
+        cheating_flag TEXT DEFAULT '',
+        ai_emotion TEXT DEFAULT '',
+        ai_confusion TEXT DEFAULT '',
+        ai_dependency TEXT DEFAULT '',
+        ai_intervention TEXT DEFAULT '',
+        confusion_score INTEGER DEFAULT 0,
+        override_cycle INTEGER DEFAULT 0,
+        ai_analysis TEXT DEFAULT '',
+        FOREIGN KEY (course_id) REFERENCES courses (id)
+    )
+""")
+
 
     # NEW: Interventions table
     cur.execute("""
@@ -166,7 +168,8 @@ def upgrade_db():
         "ai_intervention": "TEXT",
         "confusion_score": "INTEGER",
         "override_cycle": "INTEGER DEFAULT 0",
-        "course_id": "INTEGER"  # Add course_id if missing
+        "course_id": "INTEGER",
+        "ai_analysis": "TEXT" 
     }
 
     cur.execute("PRAGMA table_info(chats)")
@@ -730,3 +733,4 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
+
