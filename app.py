@@ -6,6 +6,10 @@ from main import init_db, upgrade_db  # Add these imports
 init_db()
 upgrade_db()
 
+#st.write("Current working directory:", os.getcwd())
+#st.write("Database file path:", DB_FILE)
+#st.write("Database file exists:", os.path.exists(DB_FILE))
+
 st.set_page_config(
     page_title="Pedagogical Feedback Loop",
     layout="wide",
@@ -37,14 +41,12 @@ def main_landing():
         if st.button("Continue as Student", type="primary", use_container_width=True):
             st.switch_page("pages/Student_Login.py")
 
-    with col2:
+   with col2:
         st.markdown("### 🧑‍🏫 Teacher")
         st.write("Access teacher dashboard to review student work and provide feedback.")
         if st.button("Continue as Teacher", type="secondary", use_container_width=True):
             st.switch_page("pages/Teacher_Login.py")
 
 
-
-
 if __name__ == "__main__":
-main_landing()
+    main_landing()
