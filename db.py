@@ -12,14 +12,10 @@ except ImportError:
 
 # ======================================================
 # DATABASE FILE (persistent on Streamlit Cloud)
-# ======================================================
-DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db")
+DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db") 
 
-# Make sure folder exists
-os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+CSV_CHAT_LOG = "chat_feedback_log.csv"
 
-# ======================================================
-# AUTO-DELETE CORRUPTED OR EMPTY DATABASE
 # (This is the missing fix — REQUIRED)
 # ======================================================
 
@@ -770,6 +766,7 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
+
 
 
 
