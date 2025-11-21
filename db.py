@@ -3,7 +3,7 @@ import pandas as pd
 import hashlib
 from datetime import datetime
 import os
-import streamlit as st
+
 
 try:
     import bcrypt
@@ -96,11 +96,10 @@ def get_conn():
     try:
         return sqlite3.connect(DB_FILE, check_same_thread=False)
     except Exception as e:
-        st.error(f"Database connection error: {e}")
+        print(f"Database connection error: {e}")  # Changed from st.error to print
         # Try to recreate database
         ensure_valid_database()
         return sqlite3.connect(DB_FILE, check_same_thread=False)
-
 # ======================================================
 # INITIALIZE DATABASE (fresh installations)
 # ======================================================
@@ -989,3 +988,4 @@ def show_student_dashboard():
 # Run the main application
 if __name__ == "__main__":
     main()
+
