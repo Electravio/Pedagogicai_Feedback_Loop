@@ -921,17 +921,19 @@ def show_authentication_page():
 # ======================================================
 # MAIN APPLICATION INITIALIZATION
 # ======================================================
-# Initialize session state
-initialize_session_state()
-
-# Initialize database (this runs every time but is safe)
-initialize_database_safely()
+# REMOVE these two lines from here:
+# initialize_session_state()
+# initialize_database_safely()
 
 # ======================================================
 # MAIN APP LOGIC
 # ======================================================
 def main():
     """Main application logic"""
+    
+    # 🚨 ADD THESE TWO LINES HERE - at the VERY BEGINNING of main()
+    initialize_session_state()
+    initialize_database_safely()
     
     # Check authentication
     if not st.session_state.authenticated:
