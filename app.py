@@ -23,15 +23,15 @@ st.set_page_config(
 
 # ... rest of your app.py code
 
-hide_style = """
-    <style>
-      [data-testid="stSidebar"] {display: none !important;}
-      header {visibility: hidden;}
-      footer {visibility: hidden;}
-      .main {padding-top: 8px;}
-    </style>
-"""
-st.markdown(hide_style, unsafe_allow_html=True)
+#hide_style = """
+   # <style>
+  #    [data-testid="stSidebar"] {display: none !important;}
+ #     header {visibility: hidden;}
+  #    footer {visibility: hidden;}
+ #     .main {padding-top: 8px;}
+ #   </style>
+#"""
+#st.markdown(hide_style, unsafe_allow_html=True)
 
 
 def main_landing():
@@ -57,3 +57,4 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
