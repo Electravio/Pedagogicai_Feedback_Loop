@@ -2,11 +2,17 @@
 import streamlit as st
 import os  # Add this import
 from db import init_db, DB_FILE  # Import DB_FILE from db module
-from main import init_db as main_init_db, upgrade_db  # Rename to avoid conflict
 
 
-# Initialize database
+# Import the functions directly to avoid circular imports
+def init_main_db():
+    """Initialize the main database functions"""
+    from main import init_db as main_init_db, upgrade_db
+    return main_init_db, upgrade_db
+
+# Initialize databases
 init_db()
+main_init_db, upgrade_db = init_main_db()
 upgrade_db()
 
 #st.write("Current working directory:", os.getcwd())
@@ -57,3 +63,4 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
