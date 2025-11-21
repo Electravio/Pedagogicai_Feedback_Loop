@@ -57,6 +57,3 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
-
-
-Please write in English language.
