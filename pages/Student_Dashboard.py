@@ -112,16 +112,8 @@ def student_dashboard():
                             student=st.session_state["username"],
                             question=question,
                             ai_response=ai_answer,
-                            teacher_feedback="",
+                            course_id=course_id,
                             bloom_level=bloom,
-                            cognitive_state="",
-                            risk_level="",
-                            cheating_flag="1" if cheating else "0",
-                            ai_emotion="",
-                            ai_confusion="",
-                            ai_dependency="",
-                            ai_intervention="",
-                            confusion_score=0,
                             ai_analysis=analysis
                         )
 
@@ -423,4 +415,3 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
-
