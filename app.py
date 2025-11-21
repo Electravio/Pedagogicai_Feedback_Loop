@@ -1,38 +1,55 @@
 # app.py
 import streamlit as st
-import os  # Add this import
-from db import init_db, DB_FILE  # Import DB_FILE from db module
-from main import init_db as main_init_db, upgrade_db  # Rename to avoid conflict
+import os
+import sqlite3
 
+# Simple database initialization without imports
+def init_simple_db():
+    """Simple database initialization without circular imports"""
+    DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db")
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+    
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    
+    # Create only the essential users table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            full_name TEXT,
+            created_at TEXT
+        )
+    """)
+    
+    # Create default admin if no users exist
+    cur.execute("SELECT COUNT(*) FROM users")
+    if cur.fetchone()[0] == 0:
+        import hashlib
+        admin_password = hashlib.sha256("admin123".encode()).hexdigest()
+        cur.execute(
+            "INSERT INTO users (username, password, role, full_name, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("admin", admin_password, "teacher", "System Administrator", "2024-01-01")
+        )
+        print("✅ Created default admin user")
+    
+    conn.commit()
+    conn.close()
+    print("✅ Database initialized")
 
 # Initialize database
-init_db()
-upgrade_db()
+init_simple_db()
 
-#st.write("Current working directory:", os.getcwd())
-#st.write("Database file path:", DB_FILE)
-#st.write("Database file exists:", os.path.exists(DB_FILE))
-
-
+# Page configuration
 st.set_page_config(
     page_title="Pedagogical Feedback Loop",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
-
-# ... rest of your app.py code
-
-#hide_style = """
-   # <style>
-  #    [data-testid="stSidebar"] {display: none !important;}
- #     header {visibility: hidden;}
-  #    footer {visibility: hidden;}
- #     .main {padding-top: 8px;}
- #   </style>
-#"""
-#st.markdown(hide_style, unsafe_allow_html=True)
-
 
 def main_landing():
     st.markdown("<h1 style='text-align:center; color:#4CAF50'>📚 Pedagogical Feedback Loop</h1>", unsafe_allow_html=True)
@@ -52,9 +69,5 @@ def main_landing():
         if st.button("Continue as Teacher", type="secondary", use_container_width=True):
             st.switch_page("pages/Teacher_Login.py")
 
-
-
-
 if __name__ == "__main__":
     main_landing()
-
