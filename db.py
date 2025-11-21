@@ -13,7 +13,7 @@ except ImportError:
     HAVE_BCRYPT = False
 
 
-DB_FILE = "users_chats.db"
+DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db")
 
 CSV_CHAT_LOG = "chat_feedback_log.csv"
 
@@ -733,4 +733,5 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
+
 
