@@ -46,7 +46,7 @@ except Exception:
     HAVE_OPENAI = False
 
 # ---------- CONFIG ----------
-DB_FILE = "users_chats.db"
+DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db")
 CSV_CHAT_LOG = "chat_feedback_log.csv"
 MAX_OVERRIDE_CYCLES = 3  # limit teacher override updates
 
