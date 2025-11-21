@@ -41,7 +41,7 @@ def main_landing():
         if st.button("Continue as Student", type="primary", use_container_width=True):
             st.switch_page("pages/Student_Login.py")
 
-   with col2:
+     with col2:
         st.markdown("### 🧑‍🏫 Teacher")
         st.write("Access teacher dashboard to review student work and provide feedback.")
         if st.button("Continue as Teacher", type="secondary", use_container_width=True):
@@ -50,3 +50,4 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
