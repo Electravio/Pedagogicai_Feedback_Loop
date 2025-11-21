@@ -1,4 +1,3 @@
-# db.py
 import sqlite3
 import pandas as pd
 import hashlib
@@ -7,16 +6,54 @@ import os
 
 try:
     import bcrypt
-
     HAVE_BCRYPT = True
 except ImportError:
     HAVE_BCRYPT = False
 
-
+# ======================================================
+# DATABASE FILE (persistent on Streamlit Cloud)
+# ======================================================
 DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db")
 
-CSV_CHAT_LOG = "chat_feedback_log.csv"
+# Make sure folder exists
+os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
 
+# ======================================================
+# AUTO-DELETE CORRUPTED OR EMPTY DATABASE
+# (This is the missing fix — REQUIRED)
+# ======================================================
+
+def ensure_valid_database():
+    """
+    Ensures the database file is usable.
+    If the DB is empty, corrupted, or missing tables,
+    it deletes the DB so Streamlit can recreate it.
+    """
+    if not os.path.exists(DB_FILE):
+        return  # Fresh install, nothing to check yet
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cur.fetchall()
+        conn.close()
+
+        # If DB has no tables → corrupted → delete it
+        if len(tables) == 0:
+            os.remove(DB_FILE)
+
+    except Exception:
+        # If ANY error occurs reading the DB → delete it
+        try:
+            os.remove(DB_FILE)
+        except:
+            pass
+
+# Run database validation IMMEDIATELY
+ensure_valid_database()
+
+CSV_CHAT_LOG = "chat_feedback_log.csv"
 
 # -------------------------------------------------
 # DATABASE CONNECTION
@@ -733,5 +770,6 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
+
 
 
