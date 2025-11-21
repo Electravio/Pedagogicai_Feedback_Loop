@@ -1,8 +1,9 @@
 # app.py
 import streamlit as st
-import os  
-from db import init_db, DB_FILE 
-from main import init_db as main_init_db, upgrade_db  
+import os  # Add this import
+from db import init_db, DB_FILE  # Import DB_FILE from db module
+from main import init_db as main_init_db, upgrade_db  # Rename to avoid conflict
+
 
 # Initialize database
 init_db()
@@ -12,23 +13,25 @@ upgrade_db()
 #st.write("Database file path:", DB_FILE)
 #st.write("Database file exists:", os.path.exists(DB_FILE))
 
+
 st.set_page_config(
     page_title="Pedagogical Feedback Loop",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
+
 # ... rest of your app.py code
 
-hide_style = """
-    <style>
-      [data-testid="stSidebar"] {display: none !important;}
-      header {visibility: hidden;}
-      footer {visibility: hidden;}
-      .main {padding-top: 8px;}
-    </style>
-"""
-st.markdown(hide_style, unsafe_allow_html=True)
+#hide_style = """
+   # <style>
+  #    [data-testid="stSidebar"] {display: none !important;}
+ #     header {visibility: hidden;}
+  #    footer {visibility: hidden;}
+ #     .main {padding-top: 8px;}
+ #   </style>
+#"""
+#st.markdown(hide_style, unsafe_allow_html=True)
 
 
 def main_landing():
@@ -49,8 +52,8 @@ def main_landing():
         if st.button("Continue as Teacher", type="secondary", use_container_width=True):
             st.switch_page("pages/Teacher_Login.py")
 
+
+
+
 if __name__ == "__main__":
     main_landing()
-
-
-
