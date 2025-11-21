@@ -1319,9 +1319,52 @@ def render_student_review():
                 st.success("Marked as sent to student (record saved).")
 
 
+# ---------- ENHANCED DB INITIALIZATION ----------
+def ensure_database_ready():
+    """Ensure database is ready before any operations"""
+    try:
+        # Check if database file exists and is valid
+        if not os.path.exists(DB_FILE):
+            print("🔄 Creating new database...")
+            init_db()
+            upgrade_db()
+            return True
+            
+        # Check if users table exists
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        users_table_exists = cur.fetchone()
+        conn.close()
+        
+        if not users_table_exists:
+            print("🔄 Recreating missing database tables...")
+            init_db()
+            upgrade_db()
+            
+        return True
+    except Exception as e:
+        print(f"❌ Database preparation failed: {e}")
+        # Emergency recovery
+        try:
+            if os.path.exists(DB_FILE):
+                os.remove(DB_FILE)
+            init_db()
+            upgrade_db()
+            return True
+        except Exception as e2:
+            print(f"❌ Emergency recovery failed: {e2}")
+            return False
+
 # ---------- BOOT & ROUTER ----------
 def run_app():
-    # DB init & safe upgrade
+    # 🚨 CRITICAL FIX: Ensure database is ready BEFORE anything else
+    with st.spinner("🔄 Initializing system..."):
+        if not ensure_database_ready():
+            st.error("❌ System initialization failed. Please refresh the page.")
+            return
+
+    # Now continue with normal initialization
     init_db()
     upgrade_db()
 
