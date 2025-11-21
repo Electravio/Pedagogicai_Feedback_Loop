@@ -1,6 +1,8 @@
 # app.py
 import streamlit as st
-from main import init_db, upgrade_db  # Add these imports
+import os  
+from db import init_db, DB_FILE 
+from main import init_db as main_init_db, upgrade_db  
 
 # Initialize database
 init_db()
@@ -49,5 +51,6 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
 
 
