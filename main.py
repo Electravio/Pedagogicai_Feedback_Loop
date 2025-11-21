@@ -54,16 +54,16 @@ MAX_OVERRIDE_CYCLES = 3  # limit teacher override updates
 st.set_page_config(page_title="Pedagogical Feedback Loop", layout="wide", initial_sidebar_state="collapsed")
 
 # Hide Streamlit default sidebar and menu to reduce UI flash
-#hide_style = """
-   # <style>
-    #  [data-testid="stSidebar"] {display: none !important;}
-     # header {visibility: hidden;}
-    #  footer {visibility: hidden;}
-    #  /* Attempt to prevent flash by setting body margin */
-     # .main {padding-top: 8px;}
-   # </style>
-#"""
-#st.markdown(hide_style, unsafe_allow_html=True)
+hide_style = """
+   <style>
+      [data-testid="stSidebar"] {display: none !important;}
+      header {visibility: hidden;}
+      footer {visibility: hidden;}
+      /* Attempt to prevent flash by setting body margin */
+      .main {padding-top: 8px;}
+    </style>
+"""
+st.markdown(hide_style, unsafe_allow_html=True)
 
 
 # ---------- DB HELPERS ----------
