@@ -3,6 +3,7 @@ import pandas as pd
 import hashlib
 from datetime import datetime
 import os
+import streamlit as st
 
 try:
     import bcrypt
@@ -12,13 +13,19 @@ except ImportError:
 
 # ======================================================
 # DATABASE FILE (persistent on Streamlit Cloud)
-DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db") 
+# ======================================================
+if "runtime" in st.secrets and st.secrets["runtime"].get("is_remote", False):
+    # On Streamlit Cloud
+    DB_FILE = "/tmp/users_chats.db"
+else:
+    # Local development
+    DB_FILE = os.path.join(os.path.expanduser("~"), ".streamlit", "users_chats.db")
 
 CSV_CHAT_LOG = "chat_feedback_log.csv"
 
-# (This is the missing fix — REQUIRED)
 # ======================================================
-
+# DATABASE VALIDATION
+# ======================================================
 def ensure_valid_database():
     """
     Ensures the database file is usable.
@@ -38,30 +45,67 @@ def ensure_valid_database():
         # If DB has no tables → corrupted → delete it
         if len(tables) == 0:
             os.remove(DB_FILE)
+            print("🔄 Deleted corrupted database file")
 
-    except Exception:
+    except Exception as e:
         # If ANY error occurs reading the DB → delete it
+        print(f"⚠️ Database error, recreating: {e}")
         try:
             os.remove(DB_FILE)
         except:
             pass
 
-# Run database validation IMMEDIATELY
-ensure_valid_database()
+# ======================================================
+# SESSION STATE MANAGEMENT
+# ======================================================
+def initialize_session_state():
+    """Initialize session state variables"""
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'role' not in st.session_state:
+        st.session_state.role = None
+    if 'current_course' not in st.session_state:
+        st.session_state.current_course = None
+    if 'user_full_name' not in st.session_state:
+        st.session_state.user_full_name = None
 
-CSV_CHAT_LOG = "chat_feedback_log.csv"
+def login_user(username, role, full_name=""):
+    """Properly set login state"""
+    st.session_state.authenticated = True
+    st.session_state.username = username
+    st.session_state.role = role
+    st.session_state.user_full_name = full_name
+    st.success(f"Welcome {full_name or username}!")
 
-# -------------------------------------------------
+def logout_user():
+    """Properly clear login state"""
+    st.session_state.authenticated = False
+    st.session_state.username = None
+    st.session_state.role = None
+    st.session_state.current_course = None
+    st.session_state.user_full_name = None
+    st.info("You have been logged out successfully.")
+
+# ======================================================
 # DATABASE CONNECTION
-# -------------------------------------------------
+# ======================================================
 def get_conn():
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
+    """Get database connection with error handling"""
+    try:
+        return sqlite3.connect(DB_FILE, check_same_thread=False)
+    except Exception as e:
+        st.error(f"Database connection error: {e}")
+        # Try to recreate database
+        ensure_valid_database()
+        return sqlite3.connect(DB_FILE, check_same_thread=False)
 
-
-# -------------------------------------------------
+# ======================================================
 # INITIALIZE DATABASE (fresh installations)
-# -------------------------------------------------
+# ======================================================
 def init_db():
+    """Initialize database with all required tables"""
     conn = get_conn()
     cur = conn.cursor()
 
@@ -126,8 +170,7 @@ def init_db():
         ai_analysis TEXT DEFAULT '',
         FOREIGN KEY (course_id) REFERENCES courses (id)
     )
-""")
-
+    """)
 
     # NEW: Interventions table
     cur.execute("""
@@ -165,11 +208,11 @@ def init_db():
 
     conn.commit()
     conn.close()
+    print("✅ Database initialized successfully")
 
-
-# -------------------------------------------------
+# ======================================================
 # SAFE SCHEMA UPGRADE – DO NOT BREAK DATA
-# -------------------------------------------------
+# ======================================================
 def upgrade_db():
     """
     Adds missing columns if the database was created before upgrade features.
@@ -191,18 +234,18 @@ def upgrade_db():
 
     # Check and add missing columns to chats table
     new_columns = {
-        "bloom_level": "TEXT",
-        "cognitive_state": "TEXT",
-        "risk_level": "TEXT",
-        "cheating_flag": "TEXT",
-        "ai_emotion": "TEXT",
-        "ai_confusion": "TEXT",
-        "ai_dependency": "TEXT",
-        "ai_intervention": "TEXT",
-        "confusion_score": "INTEGER",
+        "bloom_level": "TEXT DEFAULT ''",
+        "cognitive_state": "TEXT DEFAULT ''",
+        "risk_level": "TEXT DEFAULT ''",
+        "cheating_flag": "TEXT DEFAULT ''",
+        "ai_emotion": "TEXT DEFAULT ''",
+        "ai_confusion": "TEXT DEFAULT ''",
+        "ai_dependency": "TEXT DEFAULT ''",
+        "ai_intervention": "TEXT DEFAULT ''",
+        "confusion_score": "INTEGER DEFAULT 0",
         "override_cycle": "INTEGER DEFAULT 0",
         "course_id": "INTEGER",
-        "ai_analysis": "TEXT" 
+        "ai_analysis": "TEXT DEFAULT ''" 
     }
 
     cur.execute("PRAGMA table_info(chats)")
@@ -218,6 +261,28 @@ def upgrade_db():
 
     # Check if new tables exist, create if they don't
     table_creations = {
+        "courses": """
+            CREATE TABLE IF NOT EXISTS courses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_code TEXT UNIQUE NOT NULL,
+                course_name TEXT NOT NULL,
+                teacher_id INTEGER NOT NULL,
+                description TEXT,
+                created_at TEXT,
+                FOREIGN KEY (teacher_id) REFERENCES users (id)
+            )
+        """,
+        "enrollments": """
+            CREATE TABLE IF NOT EXISTS enrollments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                course_id INTEGER NOT NULL,
+                enrolled_at TEXT,
+                FOREIGN KEY (student_id) REFERENCES users (id),
+                FOREIGN KEY (course_id) REFERENCES courses (id),
+                UNIQUE(student_id, course_id)
+            )
+        """,
         "interventions": """
             CREATE TABLE IF NOT EXISTS interventions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -257,15 +322,13 @@ def upgrade_db():
     conn.commit()
     conn.close()
 
-
-# -------------------------------------------------
+# ======================================================
 # PASSWORD UTILITIES
-# -------------------------------------------------
+# ======================================================
 def hash_password(password):
     if HAVE_BCRYPT:
         return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     return hashlib.sha256(password.encode()).hexdigest()
-
 
 def verify_password(password, hashed):
     if HAVE_BCRYPT:
@@ -275,10 +338,9 @@ def verify_password(password, hashed):
             return False
     return hashlib.sha256(password.encode()).hexdigest() == hashed
 
-
-# -------------------------------------------------
+# ======================================================
 # USER MANAGEMENT - UPDATED TO INCLUDE created_at
-# -------------------------------------------------
+# ======================================================
 def add_user(username, hashed_password, role, full_name=""):
     conn = get_conn()
     cur = conn.cursor()
@@ -307,7 +369,6 @@ def add_user(username, hashed_password, role, full_name=""):
         return False, f"Error: {e}"
     finally:
         conn.close()
-
 
 def get_user(username):
     conn = get_conn()
@@ -344,10 +405,16 @@ def get_user(username):
 
     return user_data
 
+def verify_login(username, password):
+    """Enhanced login verification"""
+    user = get_user(username)
+    if user and verify_password(password, user["password"]):
+        return True, user["role"], user.get("full_name", "")
+    return False, None, ""
 
-# -------------------------------------------------
+# ======================================================
 # SAVE CHAT + ANALYTICS ATTRIBUTES - UPDATED FOR course_id
-# -------------------------------------------------
+# ======================================================
 def save_chat(student, question, ai_response, course_id=None,
               teacher_feedback="", bloom_level="",
               cognitive_state="", risk_level="", cheating_flag="",
@@ -369,7 +436,7 @@ def save_chat(student, question, ai_response, course_id=None,
                 ai_emotion, ai_confusion, ai_dependency, ai_intervention,
                 confusion_score
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (ts, student, course_id, question, ai_response, teacher_feedback,
               bloom_level, cognitive_state, risk_level, cheating_flag,
               ai_emotion, ai_confusion, ai_dependency, ai_intervention,
@@ -383,7 +450,7 @@ def save_chat(student, question, ai_response, course_id=None,
                 ai_emotion, ai_confusion, ai_dependency, ai_intervention,
                 confusion_score
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (ts, student, question, ai_response, teacher_feedback,
               bloom_level, cognitive_state, risk_level, cheating_flag,
               ai_emotion, ai_confusion, ai_dependency, ai_intervention,
@@ -396,10 +463,9 @@ def save_chat(student, question, ai_response, course_id=None,
     df.to_csv(CSV_CHAT_LOG, index=False)
     conn.close()
 
-
-# -------------------------------------------------
+# ======================================================
 # LOAD ALL CHATS
-# -------------------------------------------------
+# ======================================================
 def load_all_chats():
     conn = get_conn()
     df = pd.read_sql_query("""
@@ -410,10 +476,9 @@ def load_all_chats():
     conn.close()
     return df
 
-
-# -------------------------------------------------
+# ======================================================
 # UPDATE TEACHER FEEDBACK
-# -------------------------------------------------
+# ======================================================
 def save_teacher_feedback(chat_id, feedback):
     conn = get_conn()
     cur = conn.cursor()
@@ -425,10 +490,9 @@ def save_teacher_feedback(chat_id, feedback):
     conn.commit()
     conn.close()
 
-
-# -------------------------------------------------
+# ======================================================
 # COURSE MANAGEMENT FUNCTIONS
-# -------------------------------------------------
+# ======================================================
 def get_user_id(username):
     """Get user ID by username"""
     conn = get_conn()
@@ -437,7 +501,6 @@ def get_user_id(username):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
-
 
 def create_course(course_code, course_name, teacher_username, description=""):
     """Create a new course"""
@@ -463,7 +526,6 @@ def create_course(course_code, course_name, teacher_username, description=""):
     except Exception as e:
         conn.close()
         return False, f"Error: {e}"
-
 
 def get_teacher_courses(teacher_username):
     """Get all courses for a teacher"""
@@ -495,7 +557,6 @@ def get_teacher_courses(teacher_username):
     conn.close()
     return courses
 
-
 def enroll_student_in_course(student_username, course_id):
     """Enroll a student in a course"""
     conn = get_conn()
@@ -520,7 +581,6 @@ def enroll_student_in_course(student_username, course_id):
     except Exception as e:
         conn.close()
         return False, f"Error: {e}"
-
 
 def get_student_courses(student_username):
     """Get all courses for a student"""
@@ -554,10 +614,9 @@ def get_student_courses(student_username):
     conn.close()
     return courses
 
-
-# -------------------------------------------------
+# ======================================================
 # INTERVENTION AND ANALYTICS FUNCTIONS
-# -------------------------------------------------
+# ======================================================
 def log_intervention(student_username, intervention_type, details=""):
     """Log teacher interventions"""
     conn = get_conn()
@@ -568,7 +627,6 @@ def log_intervention(student_username, intervention_type, details=""):
     """, (student_username, intervention_type, details, datetime.now().isoformat()))
     conn.commit()
     conn.close()
-
 
 def get_student_interventions(student_username):
     """Get all interventions for a student"""
@@ -593,7 +651,6 @@ def get_student_interventions(student_username):
     conn.close()
     return interventions
 
-
 def save_learning_metric(student_username, metric_type, value):
     """Save learning metric for a student"""
     conn = get_conn()
@@ -605,7 +662,6 @@ def save_learning_metric(student_username, metric_type, value):
     conn.commit()
     conn.close()
 
-
 def analyze_strong_areas(bloom_distribution):
     """Analyze strong areas based on bloom distribution"""
     if not bloom_distribution:
@@ -615,7 +671,6 @@ def analyze_strong_areas(bloom_distribution):
     sorted_areas = sorted(bloom_distribution.items(), key=lambda x: x[1], reverse=True)
     return [area[0] for area in sorted_areas[:2]] if len(sorted_areas) >= 2 else [area[0] for area in sorted_areas]
 
-
 def analyze_weak_areas(bloom_distribution):
     """Analyze weak areas based on bloom distribution"""
     if not bloom_distribution:
@@ -624,7 +679,6 @@ def analyze_weak_areas(bloom_distribution):
     # Simple logic: areas with the lowest counts are weak
     sorted_areas = sorted(bloom_distribution.items(), key=lambda x: x[1])
     return [area[0] for area in sorted_areas[:2]] if len(sorted_areas) >= 2 else [area[0] for area in sorted_areas]
-
 
 def get_student_learning_metrics(username):
     """Get comprehensive learning metrics for student"""
@@ -661,7 +715,6 @@ def get_student_learning_metrics(username):
         "strong_areas": analyze_strong_areas(bloom_distribution),
         "weak_areas": analyze_weak_areas(bloom_distribution)
     }
-
 
 def get_classroom_knowledge_map(course_id=None):
     """Get concept mastery across classroom"""
@@ -713,7 +766,6 @@ def get_classroom_knowledge_map(course_id=None):
         "concept_mastery": concept_data
     }
 
-
 def detect_knowledge_gap(concept, affected_count, severity="medium"):
     """Detect and log any knowledge gap"""
     conn = get_conn()
@@ -724,7 +776,6 @@ def detect_knowledge_gap(concept, affected_count, severity="medium"):
     """, (concept, affected_count, severity, datetime.now().isoformat()))
     conn.commit()
     conn.close()
-
 
 def get_recent_knowledge_gaps():
     """Get recently detected knowledge gaps"""
@@ -749,24 +800,190 @@ def get_recent_knowledge_gaps():
     conn.close()
     return gaps
 
-
-# Initialize database on import
-if __name__ == "__main__":
-    init_db()
-    upgrade_db()
-else:
-    # Safe initialization on import
+# ======================================================
+# DATABASE INITIALIZATION - STREAMLIT COMPATIBLE
+# ======================================================
+def initialize_database_safely():
+    """Safe database initialization for Streamlit"""
     try:
+        # First, ensure we have a valid database file
+        ensure_valid_database()
+        
+        # Initialize if needed
+        init_db()
+        
+        # Always run upgrade to ensure schema is current
+        upgrade_db()
+        
+        # Force create default admin user if no users exist
         conn = get_conn()
         cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if not cur.fetchone():
+        cur.execute("SELECT COUNT(*) FROM users")
+        user_count = cur.fetchone()[0]
+        conn.close()
+        
+        if user_count == 0:
+            # Create default admin user
+            admin_password = hash_password("admin123")
+            add_user("admin", admin_password, "teacher", "System Administrator")
+            print("✅ Created default admin user")
+            
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        # If initialization fails, try to recreate the database
+        try:
+            if os.path.exists(DB_FILE):
+                os.remove(DB_FILE)
             init_db()
             upgrade_db()
-        conn.close()
-    except Exception as e:
-        print(f"DB init check skipped: {e}")
+        except Exception as e2:
+            print(f"Emergency database creation failed: {e2}")
 
+# ======================================================
+# AUTHENTICATION UI COMPONENTS
+# ======================================================
+def show_login_form():
+    """Display login form"""
+    st.subheader("🔐 Login")
+    
+    with st.form("login_form"):
+        username = st.text_input("Username", placeholder="Enter your username")
+        password = st.text_input("Password", type="password", placeholder="Enter your password")
+        submit = st.form_submit_button("Login")
+        
+        if submit:
+            if not username or not password:
+                st.error("Please enter both username and password")
+                return
+                
+            success, role, full_name = verify_login(username, password)
+            if success:
+                login_user(username, role, full_name)
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
 
+def show_registration_form():
+    """Display registration form"""
+    st.subheader("📝 Register New Account")
+    
+    with st.form("register_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            full_name = st.text_input("Full Name", placeholder="Enter your full name")
+            username = st.text_input("Username", placeholder="Choose a username")
+            role = st.selectbox("Role", ["student", "teacher"])
+            
+        with col2:
+            password = st.text_input("Password", type="password", placeholder="Create a password")
+            confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm your password")
+        
+        submit = st.form_submit_button("Register")
+        
+        if submit:
+            # Validation
+            if not all([full_name, username, password, confirm_password]):
+                st.error("Please fill in all fields")
+                return
+                
+            if password != confirm_password:
+                st.error("Passwords do not match")
+                return
+                
+            if len(password) < 6:
+                st.error("Password must be at least 6 characters long")
+                return
+                
+            # Register user
+            hashed_password = hash_password(password)
+            success, message = add_user(username, hashed_password, role, full_name)
+            
+            if success:
+                st.success(message)
+                st.info("You can now login with your new account")
+            else:
+                st.error(message)
 
+def show_authentication_page():
+    """Main authentication page with login and registration"""
+    st.title("🎓 AI Learning Assistant")
+    st.markdown("---")
+    
+    tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+    
+    with tab1:
+        show_login_form()
+        
+    with tab2:
+        show_registration_form()
 
+# ======================================================
+# MAIN APPLICATION INITIALIZATION
+# ======================================================
+# Initialize session state
+initialize_session_state()
+
+# Initialize database (this runs every time but is safe)
+initialize_database_safely()
+
+# ======================================================
+# MAIN APP LOGIC
+# ======================================================
+def main():
+    """Main application logic"""
+    
+    # Check authentication
+    if not st.session_state.authenticated:
+        show_authentication_page()
+        return
+        
+    # User is authenticated - show main app
+    st.sidebar.title(f"Welcome, {st.session_state.user_full_name or st.session_state.username}!")
+    st.sidebar.markdown(f"**Role:** {st.session_state.role}")
+    
+    if st.sidebar.button("🚪 Logout"):
+        logout_user()
+        st.rerun()
+    
+    # Main application content based on role
+    st.title(f"🎓 AI Learning Assistant - {st.session_state.role.title()} Dashboard")
+    
+    if st.session_state.role == "teacher":
+        show_teacher_dashboard()
+    else:
+        show_student_dashboard()
+
+def show_teacher_dashboard():
+    """Teacher dashboard content"""
+    st.subheader("Teacher Dashboard")
+    
+    # Placeholder for teacher functionality
+    st.info("Teacher dashboard functionality will be implemented here")
+    
+    # Example: Course management
+    with st.expander("📚 Course Management"):
+        st.write("Manage your courses here")
+        
+    # Example: Student analytics
+    with st.expander("📊 Student Analytics"):
+        st.write("View student progress and analytics")
+
+def show_student_dashboard():
+    """Student dashboard content"""
+    st.subheader("Student Dashboard")
+    
+    # Placeholder for student functionality
+    st.info("Student dashboard functionality will be implemented here")
+    
+    # Example: Course enrollment
+    with st.expander("🎯 My Courses"):
+        st.write("View and manage your enrolled courses")
+        
+    # Example: Chat interface
+    with st.expander("💬 AI Learning Assistant"):
+        st.write("Chat with your AI learning assistant")
+
+# Run the main application
+if __name__ == "__main__":
+    main()
