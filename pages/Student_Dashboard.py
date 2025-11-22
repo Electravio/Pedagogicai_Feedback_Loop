@@ -14,6 +14,27 @@ if "logged_in" not in st.session_state or st.session_state.get("role") != "stude
     st.stop()
 
 
+def load_course_memory_from_db(username, course_id):
+    """Load past Q&A by this student for this specific course."""
+    df = load_all_chats()
+    if df.empty:
+        return []
+
+    # filter: same student + same course
+    history = df[
+        (df["student"] == username) &
+        (df["course_id"] == course_id)
+    ].sort_values(by="id")
+
+    messages = []
+    for _, row in history.iterrows():
+        messages.append({"role": "user", "content": row["question"]})
+        messages.append({"role": "assistant", "content": row["ai_response"]})
+
+    return messages
+
+
+
 def student_dashboard():
     st.set_page_config(page_title="Student Dashboard", layout="wide")
 
@@ -77,37 +98,87 @@ def student_dashboard():
 
         language_override = st.selectbox(
             "Answer language",
-            ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic"],
+            ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic", "Turkish", "Russian", "Hindi", "Portuguese", "German", "Italian", "Korean", "Japanese"],
             index=0,
             help="Choose the language for the AI response"
         )
 
-        if st.button("🚀 Ask AI", type="primary"):
-            if not question.strip():
-                st.warning("Please write a question.")
-            elif not selected_course:
-                st.warning("Please select a course.")
-            else:
-                with st.spinner("🤔 Getting detailed AI answer..."):
-                    # Enhanced prompt with course context
-                    course_context = f" (related to {selected_course})" if selected_course else ""
-                    if language_override != "Auto-detect":
-                        enhanced_prompt = f"Please provide a comprehensive, detailed answer in {language_override} to the following course-related question{course_context}:\n\n{question}"
-                    else:
-                        enhanced_prompt = f"Please provide a comprehensive and detailed answer to the following course-related question{course_context}. Respond in the same language as the question:\n\n{question}"
-
-                    ai_answer, err = get_ai_response(enhanced_prompt)
-
-                    if err:
-                        st.error(f"❌ AI error: {err}")
-                    else:
-                        # Run analyses in background for teacher (but don't show to student)
+            if st.button("🚀 Ask AI", type="primary"):
+                if not question.strip():
+                    st.warning("Please write a question.")
+                elif not selected_course:
+                    st.warning("Please select a course.")
+                else:
+                    with st.spinner("🤔 Getting detailed AI answer..."):
+            
+                        # --------------------------------------
+                        # LOAD COURSE-LEVEL MEMORY (Permanent Memory)
+                        # --------------------------------------
+                        course_memory = load_course_memory_from_db(
+                            st.session_state["username"],
+                            course_id
+                        )
+            
+                        # --------------------------------------
+                        # BUILD GPT MESSAGES
+                        # --------------------------------------
+                        messages = [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a helpful educational tutoring assistant. "
+                                    "Use ONLY this student's previous questions and answers "
+                                    "from THIS SAME COURSE to understand their learning level. "
+                                    "Do NOT reference or use memory from other courses. "
+                                    "Continue the conversation naturally and consistently."
+                                )
+                            }
+                        ]
+            
+                        # Add memory from SAME COURSE
+                        if course_memory:
+                            messages += course_memory
+            
+                        # Add the NEW question
+                        messages.append({"role": "user", "content": question})
+            
+                        # --------------------------------------
+                        # LANGUAGE OVERRIDE
+                        # --------------------------------------
+                        if language_override != "Auto-detect":
+                            messages.append({
+                                "role": "system",
+                                "content": f"Respond ONLY in {language_override}."
+                            })
+            
+                        # --------------------------------------
+                        # SEND TO OPENAI
+                        # --------------------------------------
+                        try:
+                            key = _openai_key()
+                            client = OpenAI(api_key=key)
+            
+                            response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=messages,
+                                temperature=0.7
+                            )
+                            ai_answer = response.choices[0].message.content
+            
+                        except Exception as e:
+                            st.error(f"❌ AI error: {e}")
+                            st.stop()
+            
+                        # --------------------------------------
+                        # TEACHER ANALYTICS
+                        # --------------------------------------
                         analysis = analyze_student_state(question, ai_answer)
                         bloom, bloom_reason = classify_bloom(question)
                         cheating, cheat_reason = detect_cheating(question, ai_answer)
-
-                        # Save all data for teacher review WITH COURSE ID
-                        # Replace the save_chat call with:
+            
+                        # --------------------------------------
+                        # SAVE CHAT WITH COURSE ID
+                        # --------------------------------------
                         save_student_chat(
                             student=st.session_state["username"],
                             question=question,
@@ -116,12 +187,14 @@ def student_dashboard():
                             bloom_level=bloom,
                             ai_analysis=analysis
                         )
-
-                        st.success("✅ Answer saved! Your teacher will review it and may provide additional feedback.")
+            
+                        # --------------------------------------
+                        # DISPLAY ANSWER
+                        # --------------------------------------
+                        st.success("✅ Answer saved! Your teacher will review it.")
                         st.markdown("### 🤖 AI Response")
                         st.info(ai_answer)
-
-                        # Show course context
+            
                         st.caption(f"📚 This question was saved under: {selected_course}")
 
     with tab_history:
@@ -415,3 +488,4 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
+
