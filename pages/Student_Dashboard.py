@@ -5,6 +5,13 @@ from main import get_ai_response, save_chat, load_all_chats, analyze_student_sta
     get_student_courses, get_conn, save_student_chat
 from main import init_db, upgrade_db  # Add these imports
 from typing import List, Dict, Optional, Tuple  # Add this import
+from openai import OpenAI
+
+def _openai_key():
+    """Get OpenAI API key from environment or Streamlit secrets"""
+    # You'll need to implement this based on your setup
+    return st.secrets.get("OPENAI_API_KEY", "")
+
 
 # Strict authentication check
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
@@ -32,7 +39,6 @@ def load_course_memory_from_db(username, course_id):
         messages.append({"role": "assistant", "content": row["ai_response"]})
 
     return messages
-
 
 
 def student_dashboard():
@@ -103,87 +109,87 @@ def student_dashboard():
             help="Choose the language for the AI response"
         )
 
-                        # ------------------------------
-                # ASK AI BUTTON (INSIDE TAB)
-                # ------------------------------
-                if st.button("🚀 Ask AI", type="primary"):
-                    if not question.strip():
-                        st.warning("Please write a question.")
-                    elif not selected_course:
-                        st.warning("Please select a course.")
-                    else:
-                        with st.spinner("🤔 Getting detailed AI answer..."):
-        
-                            # Load course memory
-                            course_memory = load_course_memory_from_db(
-                                st.session_state["username"],
-                                course_id
+        # ------------------------------
+        # ASK AI BUTTON (INSIDE TAB)
+        # ------------------------------
+        if st.button("🚀 Ask AI", type="primary"):
+            if not question.strip():
+                st.warning("Please write a question.")
+            elif not selected_course:
+                st.warning("Please select a course.")
+            else:
+                with st.spinner("🤔 Getting detailed AI answer..."):
+    
+                    # Load course memory
+                    course_memory = load_course_memory_from_db(
+                        st.session_state["username"],
+                        course_id
+                    )
+    
+                    # Build GPT messages
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a helpful educational tutoring assistant. "
+                                "Use ONLY this student's previous questions and answers "
+                                "from THIS SAME COURSE to understand their learning level. "
+                                "Do NOT reference or use memory from other courses. "
+                                "Continue the conversation naturally and consistently."
                             )
-        
-                            # Build GPT messages
-                            messages = [
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "You are a helpful educational tutoring assistant. "
-                                        "Use ONLY this student's previous questions and answers "
-                                        "from THIS SAME COURSE to understand their learning level. "
-                                        "Do NOT reference or use memory from other courses. "
-                                        "Continue the conversation naturally and consistently."
-                                    )
-                                }
-                            ]
-        
-                            # Add memory if exists
-                            if course_memory:
-                                messages += course_memory
-        
-                            # Add new question
-                            messages.append({"role": "user", "content": question})
-        
-                            # Add language override
-                            if language_override != "Auto-detect":
-                                messages.append({
-                                    "role": "system",
-                                    "content": f"Respond ONLY in {language_override}."
-                                })
-        
-                            # Call OpenAI
-                            try:
-                                key = _openai_key()
-                                client = OpenAI(api_key=key)
-        
-                                response = client.chat.completions.create(
-                                    model="gpt-3.5-turbo",
-                                    messages=messages,
-                                    temperature=0.7
-                                )
-                                ai_answer = response.choices[0].message.content
-        
-                            except Exception as e:
-                                st.error(f"❌ AI error: {e}")
-                                st.stop()
-        
-                            # Teacher analytics
-                            analysis = analyze_student_state(question, ai_answer)
-                            bloom, bloom_reason = classify_bloom(question)
-                            cheating, cheat_reason = detect_cheating(question, ai_answer)
-        
-                            # Save chat
-                            save_student_chat(
-                                student=st.session_state["username"],
-                                question=question,
-                                ai_response=ai_answer,
-                                course_id=course_id,
-                                bloom_level=bloom,
-                                ai_analysis=analysis
-                            )
-        
-                            # Display answer
-                            st.success("✅ Answer saved! Your teacher will review it.")
-                            st.markdown("### 🤖 AI Response")
-                            st.info(ai_answer)
-                            st.caption(f"📚 Saved under: {selected_course}")
+                        }
+                    ]
+    
+                    # Add memory if exists
+                    if course_memory:
+                        messages += course_memory
+    
+                    # Add new question
+                    messages.append({"role": "user", "content": question})
+    
+                    # Add language override
+                    if language_override != "Auto-detect":
+                        messages.append({
+                            "role": "system",
+                            "content": f"Respond ONLY in {language_override}."
+                        })
+    
+                    # Call OpenAI
+                    try:
+                        key = _openai_key()
+                        client = OpenAI(api_key=key)
+    
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=messages,
+                            temperature=0.7
+                        )
+                        ai_answer = response.choices[0].message.content
+    
+                    except Exception as e:
+                        st.error(f"❌ AI error: {e}")
+                        st.stop()
+    
+                    # Teacher analytics
+                    analysis = analyze_student_state(question, ai_answer)
+                    bloom, bloom_reason = classify_bloom(question)
+                    cheating, cheat_reason = detect_cheating(question, ai_answer)
+    
+                    # Save chat
+                    save_student_chat(
+                        student=st.session_state["username"],
+                        question=question,
+                        ai_response=ai_answer,
+                        course_id=course_id,
+                        bloom_level=bloom,
+                        ai_analysis=analysis
+                    )
+    
+                    # Display answer
+                    st.success("✅ Answer saved! Your teacher will review it.")
+                    st.markdown("### 🤖 AI Response")
+                    st.info(ai_answer)
+                    st.caption(f"📚 Saved under: {selected_course}")
 
     with tab_history:
         st.markdown("### 📖 Your Previous Q&A")
@@ -476,7 +482,3 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
-
-
-
-
