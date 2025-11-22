@@ -2,12 +2,7 @@
 import streamlit as st
 import os  # Add this import
 from db import init_db, DB_FILE  # Import DB_FILE from db module
-from main import init_db as main_init_db, upgrade_db  # Rename to avoid conflict
 
-
-# Initialize database
-init_db()
-upgrade_db()
 
 #st.write("Current working directory:", os.getcwd())
 #st.write("Database file path:", DB_FILE)
@@ -57,3 +52,4 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
