@@ -1035,40 +1035,94 @@ def main_landing():
         st.markdown("Tip: To create a hidden developer account, register then update role to `developer` in the DB.")
 
 
+
+
 def student_dashboard():
     st.title(f"🎓 Student — {st.session_state.get('full_name') or st.session_state.get('username')}")
+
     tab_new, tab_history = st.tabs(["New Chat", "Chat History"])
 
     with tab_new:
         st.markdown("Ask a question — the AI will reply in the same language as your question by default.")
         question = st.text_area("Your question", height=180, placeholder="Type your question...")
-        language_override = st.selectbox("Answer language",
-                                         ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic"], index=0)
+
+        # Expanded language options
+        language_override = st.selectbox(
+            "Answer language",
+            [
+                "Auto-detect",
+                "English",
+                "Spanish",
+                "French",
+                "Chinese",
+                "Arabic",
+                "Turkish",
+                "Russian",
+                "Hindi",
+                "Portuguese",
+                "German",
+                "Italian",
+                "Korean",
+                "Japanese",
+            ],
+            index=0
+        )
 
         if st.button("Ask AI"):
             if not question.strip():
                 st.warning("Please write a question.")
             else:
                 with st.spinner("Getting detailed AI answer..."):
-                    # Improved prompt construction for language handling
+
+                    # Load PERMANENT MEMORY from SQLite
+                    chat_history = load_chat_memory_from_db(st.session_state["username"])
+
+                    # Add current question to chat
+                    chat_history.append({"role": "user", "content": question})
+
+                    # Build the messages for GPT
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a helpful educational assistant. "
+                                "Continue the conversation naturally. Use the student's past questions and answers "
+                                "as context. Do not repeat previous responses unless asked. "
+                                "Build on the student's earlier ideas."
+                            )
+                        }
+                    ]
+
+                    # Include chat history before the new question
+                    messages += chat_history
+
+                    # Language override rule
                     if language_override != "Auto-detect":
-                        # Explicit language instruction
-                        enhanced_prompt = f"Please provide a comprehensive, detailed answer in {language_override} to the following question:\n\n{question}"
-                    else:
-                        # Let AI detect language but emphasize detailed response
-                        enhanced_prompt = f"Please provide a comprehensive and detailed answer to the following question. Respond in the same language as the question:\n\n{question}"
+                        messages.append({
+                            "role": "system",
+                            "content": f"IMPORTANT: Respond ONLY in {language_override}."
+                        })
 
-                    ai_answer, err = get_ai_response(enhanced_prompt)
+                    # Call OpenAI directly (bypassing old get_ai_response)
+                    key = _openai_key()
+                    client = OpenAI(api_key=key)
 
-                    if err:
-                        st.error(f"AI error: {err}")
-                    else:
-                        # Run analyses in background for teacher (but don't show to student)
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=messages,
+                            temperature=0.7
+                        )
+                        ai_answer = response.choices[0].message.content
+
+                        # --------------------------------------
+                        # TEACHER ANALYTICS (unchanged)
+                        # --------------------------------------
                         analysis = analyze_student_state(question, ai_answer)
                         bloom, bloom_reason = classify_bloom(question)
                         cheating, cheat_reason = detect_cheating(question, ai_answer)
 
-                        # Save all data for teacher review
+                        # Save everything to DB
                         save_chat(
                             st.session_state["username"],
                             question,
@@ -1082,8 +1136,13 @@ def student_dashboard():
                         st.success("✅ Detailed answer saved! Your teacher may review it later.")
                         st.markdown("### 🤖 AI Response")
                         st.write(ai_answer)
-                        # Teacher-only sections removed as discussed earlier
 
+                    except Exception as e:
+                        st.error(f"AI error: {e}")
+
+    # --------------------------------------
+    # CHAT HISTORY TAB (unchanged)
+    # --------------------------------------
     with tab_history:
         st.markdown("Your previous Q&A (latest first).")
         df = load_all_chats()
@@ -1103,6 +1162,7 @@ def student_dashboard():
                         st.write("**Teacher Feedback:**")
                         teacher_feedback = row.get("teacher_feedback") or "_No feedback yet._"
                         st.write(teacher_feedback)
+
 
 
 # Add this function to your main.py for student-specific saves
