@@ -1,9 +1,22 @@
-# pages/Student_Login.py
+# db.py
 import streamlit as st
-from db import get_user, verify_password, hash_password, add_user, ensure_db_initialized
+import sqlite3
+import pandas as pd
+import hashlib
+from datetime import datetime
+import os
 
-# Initialize database
-ensure_db_initialized()
+try:
+    import bcrypt
+    HAVE_BCRYPT = True
+except ImportError:
+    HAVE_BCRYPT = False
+
+DB_FILE = "users_chats.db"
+CSV_CHAT_LOG = "chat_feedback_log.csv"
+
+def get_conn():
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
 st.set_page_config(
     page_title="Student Login",
@@ -76,4 +89,5 @@ def student_login():
 
 if __name__ == "__main__":
     student_login()
+
 
