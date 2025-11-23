@@ -47,13 +47,14 @@ def main_landing():
         st.markdown("### 🎓 Student")
         st.write("Access your learning dashboard to ask questions and get AI assistance.")
         if st.button("Continue as Student", type="primary", use_container_width=True):
-            st.switch_page("pages2/1_Student_Login.py")
+            st.switch_page("pages/Student_Login.py")
 
     with col2:
         st.markdown("### 🧑‍🏫 Teacher")
         st.write("Access teacher dashboard to review student work and provide feedback.")
         if st.button("Continue as Teacher", type="secondary", use_container_width=True):
-            st.switch_page("pages2/3_Teacher_Login.py")
+            st.switch_page("pages/Teacher_Login.py")
 
 if __name__ == "__main__":
     main_landing()
+
