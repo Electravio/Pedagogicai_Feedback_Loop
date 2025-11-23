@@ -1,4 +1,5 @@
 # db.py
+import streamlit as st
 import sqlite3
 import pandas as pd
 import hashlib
@@ -7,23 +8,15 @@ import os
 
 try:
     import bcrypt
-
     HAVE_BCRYPT = True
 except ImportError:
     HAVE_BCRYPT = False
 
-
-DB_FILE = "users_chats.db"
-
-CSV_CHAT_LOG = "chat_feedback_log.csv"
-
-
-# -------------------------------------------------
-# DATABASE CONNECTION
-# -------------------------------------------------
+# Use Streamlit's persistent storage on Cloud
+@st.cache_resource
 def get_conn():
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
-
+    # On Streamlit Cloud, this will persist between deployments
+    return sqlite3.connect("users_chats.db", check_same_thread=False)
 
 # -------------------------------------------------
 # INITIALIZE DATABASE (fresh installations)
@@ -831,3 +824,4 @@ def ensure_db_initialized():
 
 # Initialize immediately on import
 ensure_db_initialized()
+
