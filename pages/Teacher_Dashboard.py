@@ -10,6 +10,12 @@ import json
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
+# Import database functions from db.py instead of redefining them
+from db import (
+    get_conn, get_user_id, create_course, get_teacher_courses, get_course_students, 
+    enroll_student_in_course, load_all_chats, save_teacher_feedback, ensure_db_initialized
+)
+
 # ==============================
 # CONFIGURATION
 # ==============================
@@ -20,25 +26,10 @@ MAX_FEEDBACK_LENGTH = 1000
 
 def initialize_database():
     """Initialize database with required tables and columns"""
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
+    # Use the robust initialization from db.py
+    ensure_db_initialized()
 
-    # Check if course_id column exists in chats table
-    cur.execute("PRAGMA table_info(chats)")
-    columns = [col[1] for col in cur.fetchall()]
 
-    if 'course_id' not in columns:
-        try:
-            # Add course_id column to chats table
-            cur.execute("ALTER TABLE chats ADD COLUMN course_id INTEGER")
-            conn.commit()
-            st.sidebar.success("✅ Database schema updated successfully")
-        except Exception as e:
-            st.sidebar.warning(f"Database schema update: {e}")
-
-    conn.close()
-
-# Add this at the top of the file to check authentication
 def check_authentication():
     """Check if user is authenticated as teacher"""
     if "username" not in st.session_state or "role" not in st.session_state:
@@ -76,179 +67,15 @@ def safe_db_operation(operation_func):
 
 
 @safe_db_operation
-def get_user_id(username: str) -> Optional[int]:
-    """Get user ID by username"""
-    conn = connect_db()
-    if not conn:
-        return None
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM users WHERE username = ?", (username,))
-    row = cur.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
-@safe_db_operation
-def create_course(course_code: str, course_name: str, teacher_username: str, description: str = "") -> Tuple[bool, str]:
-    """Create a new course"""
-    conn = connect_db()
-    if not conn:
-        return False, "Database connection failed"
-
-    cur = conn.cursor()
-
-    # Get teacher ID
-    teacher_id = get_user_id(teacher_username)
-    if not teacher_id:
-        conn.close()
-        return False, "Teacher not found"
-
-    try:
-        cur.execute(
-            "INSERT INTO courses (course_code, course_name, teacher_id, description, created_at) VALUES (?, ?, ?, ?, ?)",
-            (course_code, course_name, teacher_id, description, datetime.now().isoformat())
-        )
-        conn.commit()
-        conn.close()
-        return True, "Course created successfully"
-    except sqlite3.IntegrityError:
-        conn.close()
-        return False, "Course code already exists"
-    except Exception as e:
-        conn.close()
-        return False, f"Error: {e}"
-
-
-@safe_db_operation
-def get_teacher_courses(teacher_username: str) -> List[Dict]:
-    """Get all courses for a teacher"""
-    conn = connect_db()
-    if not conn:
-        return []
-
-    teacher_id = get_user_id(teacher_username)
-    if not teacher_id:
-        conn.close()
-        return []
-
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, course_code, course_name, description, created_at 
-        FROM courses 
-        WHERE teacher_id = ?
-        ORDER BY course_name
-    """, (teacher_id,))
-
-    courses = []
-    for row in cur.fetchall():
-        courses.append({
-            "id": row[0],
-            "course_code": row[1],
-            "course_name": row[2],
-            "description": row[3],
-            "created_at": row[4]
-        })
-
-    conn.close()
-    return courses
-
-
-@safe_db_operation
-def get_course_students(course_id: int) -> List[Dict]:
-    """Get all students enrolled in a course"""
-    conn = connect_db()
-    if not conn:
-        return []
-
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT u.username, u.full_name, e.enrolled_at
-        FROM users u
-        JOIN enrollments e ON u.id = e.student_id
-        WHERE e.course_id = ?
-        ORDER BY u.username
-    """, (course_id,))
-
-    students = []
-    for row in cur.fetchall():
-        students.append({
-            "username": row[0],
-            "full_name": row[1],
-            "enrolled_at": row[2]
-        })
-
-    conn.close()
-    return students
-
-
-@safe_db_operation
-def enroll_student(student_username: str, course_code: str) -> Tuple[bool, str]:
-    """Enroll a student in a course"""
-    conn = connect_db()
-    if not conn:
-        return False, "Database connection failed"
-
-    try:
-        # Get student and course IDs
-        student_id = get_user_id(student_username)
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM courses WHERE course_code = ?", (course_code,))
-        course_row = cur.fetchone()
-
-        if not student_id:
-            conn.close()
-            return False, "Student not found"
-        if not course_row:
-            conn.close()
-            return False, "Course not found"
-
-        course_id = course_row[0]
-
-        cur.execute(
-            "INSERT INTO enrollments (student_id, course_id, enrolled_at) VALUES (?, ?, ?)",
-            (student_id, course_id, datetime.now().isoformat())
-        )
-        conn.commit()
-        conn.close()
-        return True, "Student enrolled successfully"
-    except sqlite3.IntegrityError:
-        conn.close()
-        return False, "Student already enrolled in this course"
-    except Exception as e:
-        conn.close()
-        return False, f"Error: {e}"
-
-
-@safe_db_operation
 def load_chats_df(limit: Optional[int] = None) -> pd.DataFrame:
     """Load chats from database with optional limit"""
-    conn = connect_db()
-    if not conn:
-        return pd.DataFrame()
-
-    try:
-        query = """
-            SELECT id, timestamp, student, question, ai_response, teacher_feedback, 
-                   bloom_level, cheating_flag, ai_analysis, override_cycle
-            FROM chats 
-            ORDER BY id DESC
-        """
-        if limit:
-            query += f" LIMIT {int(limit)}"
-
-        df = pd.read_sql_query(query, conn)
-        return df
-    except Exception as e:
-        st.error(f"Error loading chats: {e}")
-        return pd.DataFrame()
-    finally:
-        conn.close()
+    return load_all_chats()
 
 
 @safe_db_operation
 def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.DataFrame:
     """Load chats for a specific course"""
-    conn = connect_db()
+    conn = get_conn()
     if not conn:
         return pd.DataFrame()
 
@@ -292,10 +119,11 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
     finally:
         conn.close()
 
+
 @safe_db_operation
 def get_chat_by_id(chat_id: int) -> Optional[Dict]:
     """Get specific chat by ID"""
-    conn = connect_db()
+    conn = get_conn()
     if not conn:
         return None
 
@@ -320,31 +148,32 @@ def get_chat_by_id(chat_id: int) -> Optional[Dict]:
 @safe_db_operation
 def update_teacher_feedback(chat_id: int, feedback: str) -> bool:
     """Update teacher feedback and increment override cycle"""
-    conn = connect_db()
+    # Use the function from db.py which already handles override cycles
+    save_teacher_feedback(chat_id, feedback)
+    return True
+
+
+def enroll_student(student_username: str, course_code: str) -> Tuple[bool, str]:
+    """Enroll a student in a course - wrapper function"""
+    conn = get_conn()
     if not conn:
-        return False
-
-    cur = conn.cursor()
-
-    # Get current override cycle
-    cur.execute("SELECT override_cycle FROM chats WHERE id = ?", (chat_id,))
-    result = cur.fetchone()
-    current_cycle = result[0] if result else 0
-    new_cycle = min(3, current_cycle + 1)
+        return False, "Database connection failed"
 
     try:
-        cur.execute("""
-            UPDATE chats 
-            SET teacher_feedback = ?, override_cycle = ?, timestamp = datetime('now')
-            WHERE id = ?
-        """, (feedback, new_cycle, chat_id))
-        conn.commit()
-        conn.close()
-        return True
+        # Get course ID from course code
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM courses WHERE course_code = ?", (course_code,))
+        course_row = cur.fetchone()
+        
+        if not course_row:
+            return False, "Course not found"
+            
+        course_id = course_row[0]
+        return enroll_student_in_course(student_username, course_id)
     except Exception as e:
-        st.error(f"Database update failed: {e}")
+        return False, f"Error: {e}"
+    finally:
         conn.close()
-        return False
 
 
 # ==============================
@@ -752,29 +581,27 @@ def create_interactive_analytics(df: pd.DataFrame):
             else:
                 st.info("No intervention data")
 
-#filtered_df
-filtered_df = filtered_df if 'filtered_df' in locals() else pd.DataFrame()
+    # Cheating analysis table
+    if not filtered_df.empty:
+        st.subheader("Risk Assessment Summary")
+        cheating_analysis = filtered_df.groupby('student')['cheating_flag'].agg(['count', 'sum']).rename(
+            columns={'sum': 'flagged_count'})
 
-        # Cheating analysis table
-if not filtered_df.empty:
-    st.subheader("Risk Assessment Summary")
-    cheating_analysis = filtered_df.groupby('student')['cheating_flag'].agg(['count', 'sum']).rename(
-        columns={'sum': 'flagged_count'})
+        if not cheating_analysis.empty:
+            # SAFE flag rate calculation (no division errors)
+            cheating_analysis['flag_rate'] = (
+                cheating_analysis['flagged_count'].astype(float)
+                / cheating_analysis['count'].replace(0, float('nan'))
+            ).fillna(0).round(3)
 
-    if not cheating_analysis.empty:
-        # SAFE flag rate calculation (no division errors)
-        cheating_analysis['flag_rate'] = (
-            cheating_analysis['flagged_count'].astype(float)
-            / cheating_analysis['count'].replace(0, float('nan'))
-        ).fillna(0).round(3)
+            st.dataframe(
+                cheating_analysis.sort_values('flag_rate', ascending=False).head(10),
+                use_container_width=True
+            )
+            st.caption("Students with highest risk indicators (top 10)")
+        else:
+            st.info("No risk assessment data")
 
-        st.dataframe(
-            cheating_analysis.sort_values('flag_rate', ascending=False).head(10),
-            use_container_width=True
-        )
-        st.caption("Students with highest risk indicators (top 10)")
-    else:
-        st.info("No risk assessment data")
 
 def export_thesis_data():
     """Export comprehensive research data"""
@@ -1125,5 +952,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
