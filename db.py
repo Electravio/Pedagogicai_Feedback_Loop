@@ -1,6 +1,6 @@
-# db.py
+# db.py - TEMPORARY SQLITE VERSION WITH WARNING
 import streamlit as st
-import psycopg2
+import sqlite3
 import pandas as pd
 import hashlib
 from datetime import datetime
@@ -12,16 +12,15 @@ try:
 except ImportError:
     HAVE_BCRYPT = False
 
-# Use Supabase PostgreSQL database
-DATABASE_URL = st.secrets["SUPABASE_URL"]
+DB_FILE = "users_chats.db"
 CSV_CHAT_LOG = "chat_feedback_log.csv"
 
-# -------------------------------------------------
-# DATABASE CONNECTION
-# -------------------------------------------------
 def get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
+# Show warning in sidebar
+def show_persistence_warning():
+    st.sidebar.warning("🚨 DEMO MODE: Data resets on app restart")
 # -------------------------------------------------
 # INITIALIZE DATABASE (fresh installations)
 # -------------------------------------------------
@@ -568,3 +567,4 @@ def ensure_db_initialized():
 
 # Initialize immediately on import
 ensure_db_initialized()
+
