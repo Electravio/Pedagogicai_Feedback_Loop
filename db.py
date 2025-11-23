@@ -4,6 +4,11 @@ import pandas as pd
 import hashlib
 from datetime import datetime
 import os
+import streamlit as st
+from db import ensure_db_initialized
+
+# Ensure database is initialized before anything else
+ensure_db_initialized()
 
 try:
     import bcrypt
@@ -717,19 +722,38 @@ def get_recent_knowledge_gaps():
     return gaps
 
 
-# Initialize database on import
-if __name__ == "__main__":
-    init_db()
-    upgrade_db()
-else:
-    # Safe initialization on import
+# -------------------------------------------------
+# ROBUST DATABASE INITIALIZATION FOR STREAMLIT
+# -------------------------------------------------
+def ensure_db_initialized():
+    """Ensure database is properly initialized - call this at app startup"""
     try:
         conn = get_conn()
         cur = conn.cursor()
+        
+        # Check if users table exists and has basic structure
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if not cur.fetchone():
+            # Fresh database - initialize everything
             init_db()
             upgrade_db()
+            print("✅ Database freshly initialized")
+        else:
+            # Database exists, but check if it needs upgrades
+            upgrade_db()
+            print("✅ Database upgrade check completed")
+            
         conn.close()
     except Exception as e:
-        print(f"DB init check skipped: {e}")
+        print(f"❌ Database initialization error: {e}")
+        # Try to recover by recreating
+        try:
+            init_db()
+            upgrade_db()
+            print("✅ Database recovered via reinitialization")
+        except Exception as e2:
+            print(f"❌ Critical: Database recovery failed: {e2}")
+
+# Initialize immediately on import
+ensure_db_initialized()
+
