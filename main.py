@@ -24,11 +24,23 @@ from typing import Tuple, Optional, List, Dict
 
 # Optional libraries
 # all imports ...
-import bcrypt
-import openai
-import plotly.express as px
-import os
-import sqlite3
+try:
+    import bcrypt
+    HAVE_BCRYPT = True
+except Exception:
+    HAVE_BCRYPT = False
+
+try:
+    import plotly.express as px
+    HAVE_PLOTLY = True
+except Exception:
+    HAVE_PLOTLY = False
+
+try:
+    import openai
+    HAVE_OPENAI = True
+except Exception:
+    HAVE_OPENAI = False
 
 # old try/excepts for bcrypt, plotly, openai
 # KEEP THESE EXACTLY AS THEY ARE
