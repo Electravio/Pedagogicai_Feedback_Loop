@@ -23,35 +23,32 @@ import re
 from typing import Tuple, Optional, List, Dict
 
 # Optional libraries
-# all imports ...
 try:
     import bcrypt
+
     HAVE_BCRYPT = True
 except Exception:
     HAVE_BCRYPT = False
 
 try:
     import plotly.express as px
+
     HAVE_PLOTLY = True
 except Exception:
     HAVE_PLOTLY = False
 
+# OpenAI import
 try:
     import openai
+
     HAVE_OPENAI = True
 except Exception:
     HAVE_OPENAI = False
 
-# old try/excepts for bcrypt, plotly, openai
-# KEEP THESE EXACTLY AS THEY ARE
-
-# -------------- DATABASE CONFIG (NEW WORKING VERSION) --------------
-PERSISTENT_DIR = "/mount/data/db"
-DB_FILE = f"{PERSISTENT_DIR}/users_chats.db"
-
-def get_conn():
-    os.makedirs(PERSISTENT_DIR, exist_ok=True)
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
+# ---------- CONFIG ----------
+DB_FILE = "users_chats.db"
+CSV_CHAT_LOG = "chat_feedback_log.csv"
+MAX_OVERRIDE_CYCLES = 3  # limit teacher override updates
 
 # ---------- STREAMLIT PAGE SETUP ----------
 st.set_page_config(page_title="Pedagogical Feedback Loop", layout="wide", initial_sidebar_state="collapsed")
