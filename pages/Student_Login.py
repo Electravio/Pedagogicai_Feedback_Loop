@@ -1,6 +1,6 @@
 # pages2/1_Student_Login.py
 import streamlit as st
-from main import get_user, verify_password, hash_password, add_user  # Import from main.py
+from db import get_user, verify_password, hash_password, add_user  # Import from db.py instead of main.py
 
 st.set_page_config(
     page_title="Student Login",
