@@ -35,6 +35,11 @@ st.markdown(hide_style, unsafe_allow_html=True)
 
 
 def teacher_login():
+    def teacher_login():
+    from db import show_persistence_warning
+    show_persistence_warning()  # ADD THIS LINE
+    
+    # ... rest of your existing code ...
     st.title("🧑‍🏫 Teacher Portal")
 
     # Navigation
@@ -99,4 +104,5 @@ def teacher_login():
 
 if __name__ == "__main__":
     teacher_login()
+
 
