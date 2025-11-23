@@ -1,21 +1,22 @@
-# pages2/1_Student_Login.py
+# pages/Student_Login.py
 import streamlit as st
-from db import get_user, verify_password, hash_password, add_user, ensure_db_initialized
 import sqlite3
-import os
-from db import DB_FILE
+from db import get_user, verify_password, hash_password, add_user, ensure_db_initialized, DB_FILE
 
-# DEBUG: Check database state
+# Initialize database
 ensure_db_initialized()
 
-# Debug info
-conn = sqlite3.connect(DB_FILE)
-cur = conn.cursor()
-cur.execute("SELECT username, role FROM users")
-users = cur.fetchall()
-st.sidebar.write("🔍 DEBUG: Current users:", users)
-conn.close()
-
+# DEBUG: Check what's actually in the database
+st.sidebar.write("🔍 DEBUG: Checking database...")
+try:
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT username, role FROM users")
+    users = cur.fetchall()
+    st.sidebar.write("🔍 Users in database:", users)
+    conn.close()
+except Exception as e:
+    st.sidebar.write("🔍 Database error:", e)
 
 st.set_page_config(
     page_title="Student Login",
@@ -32,7 +33,6 @@ hide_style = """
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
-
 
 def student_login():
     st.title("🎓 Student Portal")
@@ -57,7 +57,10 @@ def student_login():
             if not username or not password:
                 st.error("Please enter both username and password.")
             else:
+                # DEBUG: Show what get_user returns
                 user = get_user(username)
+                st.sidebar.write(f"🔍 get_user('{username}') returned:", user)
+                
                 if not user:
                     st.error("Student account not found. Please register first.")
                 elif user["role"] != "student":
@@ -92,7 +95,5 @@ def student_login():
                 else:
                     st.error(msg)
 
-
 if __name__ == "__main__":
     student_login()
-
