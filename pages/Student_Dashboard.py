@@ -1,15 +1,13 @@
 # pages/2_Student_Dashboard.py
 import streamlit as st
 import pandas as pd
-from main import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
-    get_student_courses, get_conn, save_student_chat
-from main import init_db, upgrade_db  # Add these imports
-from typing import List, Dict, Optional, Tuple  # Add this import
+from db import save_chat, load_all_chats, get_student_courses, get_conn, ensure_db_initialized  # Changed from main to db
+from main import get_ai_response, analyze_student_state, classify_bloom, detect_cheating  # Keep AI functions from main
+from typing import List, Dict, Optional, Tuple
 from openai import OpenAI
 
 def _openai_key():
     """Get OpenAI API key from environment or Streamlit secrets"""
-    # You'll need to implement this based on your setup
     return st.secrets.get("OPENAI_API_KEY", "")
 
 
@@ -17,7 +15,7 @@ def _openai_key():
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
     st.error("Access denied. Please log in as a student.")
     if st.button("Go to Student Login"):
-        st.switch_page("pages/Student_Login.py")  # Fixed path - should be 1_Student_Login.py
+        st.switch_page("pages2/1_Student_Login.py")  # Fixed path
     st.stop()
 
 
@@ -44,9 +42,8 @@ def load_course_memory_from_db(username, course_id):
 def student_dashboard():
     st.set_page_config(page_title="Student Dashboard", layout="wide")
 
-    # Initialize database at the start
-    init_db()
-    upgrade_db()
+    # Initialize database at the start - use robust initialization
+    ensure_db_initialized()
 
     # Header with navigation
     col1, col2 = st.columns([4, 1])
@@ -119,13 +116,13 @@ def student_dashboard():
                 st.warning("Please select a course.")
             else:
                 with st.spinner("🤔 Getting detailed AI answer..."):
-    
+
                     # Load course memory
                     course_memory = load_course_memory_from_db(
                         st.session_state["username"],
                         course_id
                     )
-    
+
                     # Build GPT messages
                     messages = [
                         {
@@ -139,52 +136,54 @@ def student_dashboard():
                             )
                         }
                     ]
-    
+
                     # Add memory if exists
                     if course_memory:
                         messages += course_memory
-    
+
                     # Add new question
                     messages.append({"role": "user", "content": question})
-    
+
                     # Add language override
                     if language_override != "Auto-detect":
                         messages.append({
                             "role": "system",
                             "content": f"Respond ONLY in {language_override}."
                         })
-    
+
                     # Call OpenAI
                     try:
                         key = _openai_key()
                         client = OpenAI(api_key=key)
-    
+
                         response = client.chat.completions.create(
                             model="gpt-3.5-turbo",
                             messages=messages,
                             temperature=0.7
                         )
                         ai_answer = response.choices[0].message.content
-    
+
                     except Exception as e:
                         st.error(f"❌ AI error: {e}")
                         st.stop()
-    
+
                     # Teacher analytics
                     analysis = analyze_student_state(question, ai_answer)
                     bloom, bloom_reason = classify_bloom(question)
                     cheating, cheat_reason = detect_cheating(question, ai_answer)
-    
-                    # Save chat
-                    save_student_chat(
+
+                    # Save chat - use the main save_chat function from db.py
+                    save_chat(
                         student=st.session_state["username"],
                         question=question,
                         ai_response=ai_answer,
                         course_id=course_id,
+                        teacher_feedback="",
                         bloom_level=bloom,
-                        ai_analysis=analysis
+                        ai_analysis=analysis,
+                        cheating_flag="1" if cheating else "0"
                     )
-    
+
                     # Display answer
                     st.success("✅ Answer saved! Your teacher will review it.")
                     st.markdown("### 🤖 AI Response")
