@@ -22,6 +22,17 @@ import os
 import re
 from typing import Tuple, Optional, List, Dict
 
+# Import all database functions from db.py
+from db import (
+    get_conn, init_db, upgrade_db, add_user, get_user, save_teacher_feedback,
+    load_all_chats, create_course, get_user_id, enroll_student_in_course, get_teacher_courses,
+    get_student_courses, get_course_students, load_chats_by_course, save_chat,
+    log_intervention, get_student_interventions, save_learning_metric,
+    get_student_learning_metrics, get_classroom_knowledge_map, 
+    detect_knowledge_gap, get_recent_knowledge_gaps, hash_password, verify_password,
+    ensure_db_initialized
+)
+
 # Optional libraries
 try:
     import bcrypt
@@ -66,264 +77,33 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 
-# ---------- DB HELPERS ----------
-def get_conn() -> Connection:
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-    return conn
-
-
-def init_db():
-    """Create tables if missing."""
+# ---------- CHAT MEMORY FUNCTIONS ----------
+def load_chat_memory_from_db(student_username, limit=10):
+    """Load recent chat history for a student from database"""
     conn = get_conn()
     cur = conn.cursor()
-
-    # Existing users table
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL,
-            full_name TEXT,
-            created_at TEXT
-        )
-    """)
-
-    # NEW: Courses table
-    cur.execute("""
-           CREATE TABLE IF NOT EXISTS courses (
-               id INTEGER PRIMARY KEY AUTOINCREMENT,
-               course_code TEXT UNIQUE NOT NULL,
-               course_name TEXT NOT NULL,
-               teacher_id INTEGER NOT NULL,
-               description TEXT,
-               created_at TEXT,
-               FOREIGN KEY (teacher_id) REFERENCES users (id)
-           )
-       """)
-
-    # NEW: Enrollments table (students in courses)
-    cur.execute("""
-            CREATE TABLE IF NOT EXISTS enrollments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                course_id INTEGER NOT NULL,
-                enrolled_at TEXT,
-                FOREIGN KEY (student_id) REFERENCES users (id),
-                FOREIGN KEY (course_id) REFERENCES courses (id),
-                UNIQUE(student_id, course_id)
-            )
-        """)
-
-    # chats table - latest schema including analytics columns
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS chats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            student TEXT NOT NULL,
-            course_id INTEGER,
-            question TEXT NOT NULL,
-            ai_response TEXT,
-            teacher_feedback TEXT DEFAULT '',
-            bloom_level TEXT DEFAULT '',
-            cognitive_state TEXT DEFAULT '',
-            risk_level TEXT DEFAULT '',
-            cheating_flag TEXT DEFAULT '',
-            ai_emotion TEXT DEFAULT '',
-            ai_confusion TEXT DEFAULT '',
-            ai_dependency TEXT DEFAULT '',
-            ai_intervention TEXT DEFAULT '',
-            confusion_score INTEGER DEFAULT 0,
-            override_cycle INTEGER DEFAULT 0,
-            FOREIGN KEY (course_id) REFERENCES courses (id)
-        )
-    """)
-
-    # NEW: Interventions table
-    cur.execute("""
-            CREATE TABLE IF NOT EXISTS interventions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student TEXT,
-                type TEXT,
-                details TEXT,
-                timestamp TEXT,
-                outcome TEXT
-            )
-        """)
-
-    # NEW: Learning metrics table
-    cur.execute("""
-            CREATE TABLE IF NOT EXISTS learning_metrics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student TEXT,
-                metric_type TEXT,
-                value REAL,
-                timestamp TEXT
-            )
-        """)
-
-    # NEW: Knowledge gaps table
-    cur.execute("""
-            CREATE TABLE IF NOT EXISTS knowledge_gaps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                concept TEXT,
-                affected_students INTEGER,
-                severity TEXT,
-                detected_date TEXT
-            )
-        """)
-
-    conn.commit()
-    conn.close()
-
-def upgrade_db():
-    """Safely add missing columns (idempotent)."""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    # Check and add missing columns to users table
-    cur.execute("PRAGMA table_info(users)")
-    user_columns = [col[1] for col in cur.fetchall()]
-
-    if 'created_at' not in user_columns:
-        try:
-            cur.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
-            print("✅ Added created_at column to users table")
-        except sqlite3.OperationalError:
-            pass  # already exists
-
-    # Check and add missing columns to chats table
-    new_columns = {
-        "bloom_level": "TEXT",
-        "cognitive_state": "TEXT",
-        "risk_level": "TEXT",
-        "cheating_flag": "TEXT",
-        "ai_emotion": "TEXT",
-        "ai_confusion": "TEXT",
-        "ai_dependency": "TEXT",
-        "ai_intervention": "TEXT",
-        "confusion_score": "INTEGER",
-        "override_cycle": "INTEGER DEFAULT 0",
-        "course_id": "INTEGER"
-    }
-
-    cur.execute("PRAGMA table_info(chats)")
-    chat_columns = [col[1] for col in cur.fetchall()]
-
-    for col, dtype in new_columns.items():
-        if col not in chat_columns:
-            try:
-                cur.execute(f"ALTER TABLE chats ADD COLUMN {col} {dtype}")
-                print(f"✅ Added {col} column to chats table")
-            except sqlite3.OperationalError:
-                pass  # already exists
-
-    # Check if new tables exist, create if they don't
-    table_creations = {
-        "interventions": """
-            CREATE TABLE IF NOT EXISTS interventions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student TEXT,
-                type TEXT,
-                details TEXT,
-                timestamp TEXT,
-                outcome TEXT
-            )
-        """,
-        "learning_metrics": """
-            CREATE TABLE IF NOT EXISTS learning_metrics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student TEXT,
-                metric_type TEXT,
-                value REAL,
-                timestamp TEXT
-            )
-        """,
-        "knowledge_gaps": """
-            CREATE TABLE IF NOT EXISTS knowledge_gaps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                concept TEXT,
-                affected_students INTEGER,
-                severity TEXT,
-                detected_date TEXT
-            )
-        """
-    }
-
-    for table_name, create_sql in table_creations.items():
-        cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
-        if not cur.fetchone():
-            cur.execute(create_sql)
-            print(f"✅ Created {table_name} table")
-
-    conn.commit()
-    conn.close()
-
-
-def add_user(username: str, hashed_password: str, role: str, full_name: str = "") -> Tuple[bool, str]:
-    conn = get_conn()
-    cur = conn.cursor()
+    
     try:
-        # Check if created_at column exists
-        cur.execute("PRAGMA table_info(users)")
-        columns = [col[1] for col in cur.fetchall()]
-
-        if 'created_at' in columns:
-            cur.execute(
-                "INSERT INTO users (username, password, role, full_name, created_at) VALUES (?, ?, ?, ?, ?)",
-                (username, hashed_password, role, full_name, datetime.now().isoformat())
-            )
-        else:
-            # Fallback for older schema
-            cur.execute(
-                "INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)",
-                (username, hashed_password, role, full_name)
-            )
-
-        conn.commit()
-        return True, "Registration successful."
-    except sqlite3.IntegrityError:
-        return False, "Username already exists."
+        cur.execute("""
+            SELECT question, ai_response 
+            FROM chats 
+            WHERE student = ? 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        """, (student_username, limit))
+        
+        history = []
+        for question, response in cur.fetchall():
+            history.append({"role": "user", "content": question})
+            history.append({"role": "assistant", "content": response})
+        
+        # Reverse to maintain chronological order
+        return history[::-1]
     except Exception as e:
-        return False, f"Error: {e}"
+        print(f"Error loading chat memory: {e}")
+        return []
     finally:
         conn.close()
-
-
-def get_user(username: str) -> Optional[dict]:
-    conn = get_conn()
-    cur = conn.cursor()
-
-    # Check what columns exist
-    cur.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cur.fetchall()]
-
-    # Build query based on available columns
-    select_columns = ["username", "password", "role", "full_name"]
-    if 'created_at' in columns:
-        select_columns.append("created_at")
-
-    query = f"SELECT {', '.join(select_columns)} FROM users WHERE username = ?"
-    cur.execute(query, (username,))
-    row = cur.fetchone()
-    conn.close()
-
-    if not row:
-        return None
-
-    # Map results to dictionary
-    user_data = {
-        "username": row[0],
-        "password": row[1],
-        "role": row[2],
-        "full_name": row[3]
-    }
-
-    # Add created_at if it exists
-    if len(row) > 4 and 'created_at' in columns:
-        user_data["created_at"] = row[4]
-
-    return user_data
 
 
 def update_teacher_feedback(chat_id: int, feedback: str):
@@ -342,460 +122,25 @@ def update_teacher_feedback(chat_id: int, feedback: str):
     conn.close()
 
 
-def load_all_chats() -> pd.DataFrame:
-    conn = get_conn()
-    try:
-        # Check if chats table exists first
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chats'")
-        table_exists = cur.fetchone() is not None
-
-        if not table_exists:
-            st.warning("Chats table doesn't exist yet. No chats recorded.")
-            return pd.DataFrame()  # Return empty DataFrame
-
-        df = pd.read_sql_query("SELECT * FROM chats ORDER BY id DESC", conn)
-        return df
-    except Exception as e:
-        st.error(f"Error loading chats: {e}")
-        return pd.DataFrame()  # Return empty DataFrame on error
-    finally:
-        conn.close()
-
-# ---------- COURSE MANAGEMENT FUNCTIONS ----------
-def create_course(course_code: str, course_name: str, teacher_username: str, description: str = "") -> Tuple[bool, str]:
-    """Create a new course"""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    # Get teacher ID
-    teacher = get_user(teacher_username)
-    if not teacher or teacher["role"] != "teacher":
-        conn.close()
-        return False, "Teacher not found"
-
-    try:
-        cur.execute(
-            "INSERT INTO courses (course_code, course_name, teacher_id, description, created_at) VALUES (?, ?, ?, ?, ?)",
-            (course_code, course_name, get_user_id(teacher_username), description, datetime.now().isoformat())
-        )
-        conn.commit()
-        conn.close()
-        return True, "Course created successfully"
-    except sqlite3.IntegrityError:
-        conn.close()
-        return False, "Course code already exists"
-    except Exception as e:
-        conn.close()
-        return False, f"Error: {e}"
-
-
-def get_user_id(username: str) -> Optional[int]:
-    """Get user ID by username"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM users WHERE username = ?", (username,))
-    row = cur.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
 def enroll_student(student_username: str, course_code: str) -> Tuple[bool, str]:
-    """Enroll a student in a course"""
+    """Enroll a student in a course - wrapper for db function"""
     conn = get_conn()
     cur = conn.cursor()
-
+    
     try:
-        # Get student and course IDs
-        student_id = get_user_id(student_username)
+        # Get course ID from course code
         cur.execute("SELECT id FROM courses WHERE course_code = ?", (course_code,))
         course_row = cur.fetchone()
-
-        if not student_id:
-            conn.close()
-            return False, "Student not found"
+        
         if not course_row:
-            conn.close()
             return False, "Course not found"
-
+            
         course_id = course_row[0]
-
-        cur.execute(
-            "INSERT INTO enrollments (student_id, course_id, enrolled_at) VALUES (?, ?, ?)",
-            (student_id, course_id, datetime.now().isoformat())
-        )
-        conn.commit()
-        conn.close()
-        return True, "Student enrolled successfully"
-    except sqlite3.IntegrityError:
-        conn.close()
-        return False, "Student already enrolled in this course"
+        return enroll_student_in_course(student_username, course_id)
     except Exception as e:
-        conn.close()
         return False, f"Error: {e}"
-
-
-def get_teacher_courses(teacher_username: str) -> List[Dict]:
-    """Get all courses for a teacher"""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    teacher_id = get_user_id(teacher_username)
-    if not teacher_id:
+    finally:
         conn.close()
-        return []
-
-    cur.execute("""
-        SELECT id, course_code, course_name, description, created_at 
-        FROM courses 
-        WHERE teacher_id = ?
-        ORDER BY course_name
-    """, (teacher_id,))
-
-    courses = []
-    for row in cur.fetchall():
-        courses.append({
-            "id": row[0],
-            "course_code": row[1],
-            "course_name": row[2],
-            "description": row[3],
-            "created_at": row[4]
-        })
-
-    conn.close()
-    return courses
-
-
-def get_student_courses(student_username: str) -> List[Dict]:
-    """Get all courses a student is enrolled in"""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    student_id = get_user_id(student_username)
-    if not student_id:
-        conn.close()
-        return []
-
-    cur.execute("""
-        SELECT c.id, c.course_code, c.course_name, c.description, u.username as teacher_name
-        FROM courses c
-        JOIN enrollments e ON c.id = e.course_id
-        JOIN users u ON c.teacher_id = u.id
-        WHERE e.student_id = ?
-        ORDER BY c.course_name
-    """, (student_id,))
-
-    courses = []
-    for row in cur.fetchall():
-        courses.append({
-            "id": row[0],
-            "course_code": row[1],
-            "course_name": row[2],
-            "description": row[3],
-            "teacher_name": row[4]
-        })
-
-    conn.close()
-    return courses
-
-
-def get_course_students(course_id: int) -> List[Dict]:
-    """Get all students enrolled in a course"""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT u.username, u.full_name, e.enrolled_at
-        FROM users u
-        JOIN enrollments e ON u.id = e.student_id
-        WHERE e.course_id = ?
-        ORDER BY u.username
-    """, (course_id,))
-
-    students = []
-    for row in cur.fetchall():
-        students.append({
-            "username": row[0],
-            "full_name": row[1],
-            "enrolled_at": row[2]
-        })
-
-    conn.close()
-    return students
-
-
-def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.DataFrame:
-    """Load chats for a specific course"""
-    conn = get_conn()
-    if not conn:
-        return pd.DataFrame()
-
-    query = """
-        SELECT id, timestamp, student, question, ai_response, teacher_feedback, 
-               bloom_level, cheating_flag, ai_analysis, override_cycle
-        FROM chats 
-        WHERE course_id = ?
-        ORDER BY id DESC
-    """
-    if limit:
-        query += f" LIMIT {int(limit)}"
-
-    df = pd.read_sql_query(query, conn, params=(course_id,))
-    conn.close()
-    return df
-
-
-# Update the save_chat function to include comprehensive analytics
-def save_chat(student: str, question: str, ai_response: str, course_id: Optional[int] = None,
-              teacher_feedback: str = "", bloom_level: str = "", cognitive_state: str = "",
-              risk_level: str = "", cheating_flag: str = "", ai_emotion: str = "",
-              ai_confusion: str = "", ai_dependency: str = "", ai_intervention: str = "",
-              confusion_score: int = 0, ai_analysis: str = ""):
-    """Save chat with comprehensive analytics"""
-    conn = get_conn()
-    cur = conn.cursor()
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Check if new columns exist
-    cur.execute("PRAGMA table_info(chats)")
-    columns = [col[1] for col in cur.fetchall()]
-
-    if 'course_id' in columns and 'cognitive_state' in columns:
-        # Use comprehensive schema - ALL 16 columns
-        cur.execute("""
-            INSERT INTO chats (
-                timestamp, student, course_id, question, ai_response, teacher_feedback,
-                bloom_level, cognitive_state, risk_level, cheating_flag,
-                ai_emotion, ai_confusion, ai_dependency, ai_intervention,
-                confusion_score, ai_analysis
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            ts, student, course_id, question, ai_response, teacher_feedback,
-            bloom_level, cognitive_state, risk_level, cheating_flag,
-            ai_emotion, ai_confusion, ai_dependency, ai_intervention,
-            confusion_score, ai_analysis
-        ))
-    else:
-        # Fallback to basic schema
-        cur.execute("""
-            INSERT INTO chats (timestamp, student, course_id, question, ai_response, teacher_feedback, bloom_level)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (ts, student, course_id, question, ai_response, teacher_feedback, bloom_level))
-
-    conn.commit()
-    # export CSV snapshot
-    df = pd.read_sql_query("SELECT * FROM chats ORDER BY id", conn)
-    df.to_csv(CSV_CHAT_LOG, index=False)
-    conn.close()
-
-# ---------- INTERVENTION AND ANALYTICS FUNCTIONS ----------
-def log_intervention(student_username: str, intervention_type: str, details: str = ""):
-    """Log teacher interventions"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO interventions (student, type, details, timestamp)
-        VALUES (?, ?, ?, ?)
-    """, (student_username, intervention_type, details, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-
-def get_student_interventions(student_username: str) -> List[Dict]:
-    """Get all interventions for a student"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT type, details, timestamp, outcome 
-        FROM interventions 
-        WHERE student = ? 
-        ORDER BY timestamp DESC
-    """, (student_username,))
-
-    interventions = []
-    for row in cur.fetchall():
-        interventions.append({
-            "type": row[0],
-            "details": row[1],
-            "timestamp": row[2],
-            "outcome": row[3]
-        })
-
-    conn.close()
-    return interventions
-
-
-def save_learning_metric(student_username: str, metric_type: str, value: float):
-    """Save learning metric for a student"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO learning_metrics (student, metric_type, value, timestamp)
-        VALUES (?, ?, ?, ?)
-    """, (student_username, metric_type, value, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-
-def analyze_strong_areas(bloom_distribution: Dict) -> List[str]:
-    """Analyze strong areas based on bloom distribution"""
-    if not bloom_distribution:
-        return []
-
-    # Simple logic: areas with highest counts are strong
-    sorted_areas = sorted(bloom_distribution.items(), key=lambda x: x[1], reverse=True)
-    return [area[0] for area in sorted_areas[:2]] if len(sorted_areas) >= 2 else [area[0] for area in sorted_areas]
-
-
-def analyze_weak_areas(bloom_distribution: Dict) -> List[str]:
-    """Analyze weak areas based on bloom distribution"""
-    if not bloom_distribution:
-        return []
-
-    # Simple logic: areas with lowest counts are weak
-    sorted_areas = sorted(bloom_distribution.items(), key=lambda x: x[1])
-    return [area[0] for area in sorted_areas[:2]] if len(sorted_areas) >= 2 else [area[0] for area in sorted_areas]
-
-
-def get_student_learning_metrics(username: str) -> Dict:
-    """Get comprehensive learning metrics for student"""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    # Get question count
-    cur.execute("SELECT COUNT(*) FROM chats WHERE student = ?", (username,))
-    question_count = cur.fetchone()[0]
-
-    # Get average confusion score
-    cur.execute("SELECT AVG(confusion_score) FROM chats WHERE student = ? AND confusion_score > 0", (username,))
-    avg_confusion = cur.fetchone()[0] or 0
-
-    # Get bloom level distribution
-    cur.execute("""
-        SELECT bloom_level, COUNT(*) 
-        FROM chats 
-        WHERE student = ? AND bloom_level != '' 
-        GROUP BY bloom_level
-    """, (username,))
-
-    bloom_distribution = {}
-    for row in cur.fetchall():
-        bloom_distribution[row[0]] = row[1]
-
-    conn.close()
-
-    # Calculate some basic metrics
-    return {
-        "question_count": question_count,
-        "avg_complexity": round(avg_confusion, 2),
-        "bloom_distribution": bloom_distribution,
-        "strong_areas": analyze_strong_areas(bloom_distribution),
-        "weak_areas": analyze_weak_areas(bloom_distribution)
-    }
-
-
-def get_classroom_knowledge_map(course_id: Optional[int] = None) -> Dict:
-    """Get concept mastery across classroom"""
-    conn = get_conn()
-    cur = conn.cursor()
-
-    # Build query based on course filter
-    if course_id:
-        query = """
-            SELECT bloom_level, COUNT(*) as frequency, AVG(confusion_score) as avg_confusion
-            FROM chats 
-            WHERE course_id = ? AND bloom_level != '' 
-            GROUP BY bloom_level
-            ORDER BY frequency DESC
-        """
-        cur.execute(query, (course_id,))
-    else:
-        query = """
-            SELECT bloom_level, COUNT(*) as frequency, AVG(confusion_score) as avg_confusion
-            FROM chats 
-            WHERE bloom_level != '' 
-            GROUP BY bloom_level
-            ORDER BY frequency DESC
-        """
-        cur.execute(query)
-
-    concept_data = {}
-    for row in cur.fetchall():
-        concept_data[row[0]] = {
-            "frequency": row[1],
-            "avg_confusion": row[2] or 0
-        }
-
-    conn.close()
-
-    # Analyze knowledge gaps
-    advanced_concepts = []
-    problem_areas = []
-
-    for concept, data in concept_data.items():
-        if data['frequency'] > 5 and data['avg_confusion'] < 3:  # High frequency, low confusion
-            advanced_concepts.append(concept)
-        elif data['avg_confusion'] > 7:  # High confusion
-            problem_areas.append(concept)
-
-    return {
-        "advanced_concepts": advanced_concepts[:3],  # Top 3
-        "problem_areas": problem_areas[:3],  # Top 3 problem areas
-        "concept_mastery": concept_data
-    }
-
-
-def detect_knowledge_gap(concept: str, affected_count: int, severity: str = "medium"):
-    """Detect and log a knowledge gap"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO knowledge_gaps (concept, affected_students, severity, detected_date)
-        VALUES (?, ?, ?, ?)
-    """, (concept, affected_count, severity, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-
-def get_recent_knowledge_gaps() -> List[Dict]:
-    """Get recently detected knowledge gaps"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT concept, affected_students, severity, detected_date 
-        FROM knowledge_gaps 
-        ORDER BY detected_date DESC 
-        LIMIT 10
-    """)
-
-    gaps = []
-    for row in cur.fetchall():
-        gaps.append({
-            "concept": row[0],
-            "affected_students": row[1],
-            "severity": row[2],
-            "detected_date": row[3]
-        })
-
-    conn.close()
-    return gaps
-
-
-# ---------- PASSWORD HELPERS ----------
-def hash_password(password: str) -> str:
-    if HAVE_BCRYPT:
-        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-
-def verify_password(password: str, hashed: str) -> bool:
-    if HAVE_BCRYPT:
-        try:
-            return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
-        except Exception:
-            return False
-    return hashlib.sha256(password.encode("utf-8")).hexdigest() == hashed
 
 
 # ---------- OPENAI HELPERS ----------
@@ -990,6 +335,16 @@ def main_landing():
     center_text("<h1 style='color:#4CAF50'>📚 Pedagogical Feedback Loop</h1>")
     st.markdown("<p style='text-align:center;color:#9CA3AF'>Select your role, then Register or Login.</p>",
                 unsafe_allow_html=True)
+    
+    # Debug: Show current users
+    if st.checkbox("Debug: Show current users"):
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT username, role, created_at FROM users")
+        users = cur.fetchall()
+        st.write("Current users in database:", users)
+        conn.close()
+    
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
         st.header("Get Started")
@@ -1000,31 +355,34 @@ def main_landing():
         full_name = ""
         if action == "Register":
             full_name = st.text_input("Full name (optional)", key="landing_fullname")
-        if action == "Register" and st.button("Register"):
+        
+        # Fixed registration/login flow
+        if st.button("Register" if action == "Register" else "Login"):
             if not username or not password:
                 st.error("Enter username and password.")
             else:
-                hashed = hash_password(password)
-                ok, msg = add_user(username, hashed, role_choice.lower(), full_name)
-                if ok:
-                    st.success(msg + " Please login.")
-                else:
-                    st.error(msg)
-        if action == "Login" and st.button("Login"):
-            user = get_user(username)
-            if not user:
-                st.error("User not found. Please register.")
-            elif user["role"] != role_choice.lower():
-                st.error(f"This account is a {user['role']} account — choose the correct role.")
-            elif verify_password(password, user["password"]):
-                st.session_state["logged_in"] = True
-                st.session_state["username"] = username
-                st.session_state["role"] = user["role"]
-                st.session_state["full_name"] = user.get("full_name") or ""
-                st.success("Login successful.")
-                st.rerun()
-            else:
-                st.error("Invalid password.")
+                if action == "Register":
+                    hashed = hash_password(password)
+                    ok, msg = add_user(username, hashed, role_choice.lower(), full_name)
+                    if ok:
+                        st.success(msg + " Please login.")
+                    else:
+                        st.error(msg)
+                else:  # Login
+                    user = get_user(username)
+                    if not user:
+                        st.error("User not found. Please register.")
+                    elif user["role"] != role_choice.lower():
+                        st.error(f"This account is a {user['role']} account — choose the correct role.")
+                    elif verify_password(password, user["password"]):
+                        st.session_state["logged_in"] = True
+                        st.session_state["username"] = username
+                        st.session_state["role"] = user["role"]
+                        st.session_state["full_name"] = user.get("full_name") or ""
+                        st.success("Login successful.")
+                        st.rerun()
+                    else:
+                        st.error("Invalid password.")
     with col2:
         st.header("Why this app?")
         st.write("- Students ask questions and get multilingual AI answers.")
@@ -1033,8 +391,6 @@ def main_landing():
         st.write("- Developer analytics (hidden) shows trends and flagged risks.")
         st.write("")
         st.markdown("Tip: To create a hidden developer account, register then update role to `developer` in the DB.")
-
-
 
 
 def student_dashboard():
@@ -1105,44 +461,60 @@ def student_dashboard():
 
                     # Call OpenAI directly (bypassing old get_ai_response)
                     key = _openai_key()
-                    client = OpenAI(api_key=key)
+                    if key and HAVE_OPENAI:
+                        client = OpenAI(api_key=key)
 
-                    try:
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=messages,
-                            temperature=0.7
-                        )
-                        ai_answer = response.choices[0].message.content
+                        try:
+                            response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=messages,
+                                temperature=0.7
+                            )
+                            ai_answer = response.choices[0].message.content
 
-                        # --------------------------------------
-                        # TEACHER ANALYTICS (unchanged)
-                        # --------------------------------------
-                        analysis = analyze_student_state(question, ai_answer)
+                            # TEACHER ANALYTICS
+                            analysis = analyze_student_state(question, ai_answer)
+                            bloom, bloom_reason = classify_bloom(question)
+                            cheating, cheat_reason = detect_cheating(question, ai_answer)
+
+                            # Save everything to DB
+                            save_chat(
+                                st.session_state["username"],
+                                question,
+                                ai_answer,
+                                teacher_feedback="",
+                                bloom_level=bloom,
+                                cheating_flag="1" if cheating else "0",
+                                ai_analysis=analysis
+                            )
+
+                            st.success("✅ Detailed answer saved! Your teacher may review it later.")
+                            st.markdown("### 🤖 AI Response")
+                            st.write(ai_answer)
+
+                        except Exception as e:
+                            st.error(f"AI error: {e}")
+                    else:
+                        # Fallback simulated response
+                        ai_answer = f"(Simulated) Detailed answer to: {question}"
+                        analysis = "Simulated analysis"
                         bloom, bloom_reason = classify_bloom(question)
-                        cheating, cheat_reason = detect_cheating(question, ai_answer)
-
-                        # Save everything to DB
+                        
                         save_chat(
                             st.session_state["username"],
                             question,
                             ai_answer,
                             teacher_feedback="",
                             bloom_level=bloom,
-                            cheating_flag=int(cheating),
+                            cheating_flag="0",
                             ai_analysis=analysis
                         )
-
-                        st.success("✅ Detailed answer saved! Your teacher may review it later.")
+                        
+                        st.success("✅ Answer saved (simulated mode)!")
                         st.markdown("### 🤖 AI Response")
                         st.write(ai_answer)
 
-                    except Exception as e:
-                        st.error(f"AI error: {e}")
-
-    # --------------------------------------
-    # CHAT HISTORY TAB (unchanged)
-    # --------------------------------------
+    # CHAT HISTORY TAB
     with tab_history:
         st.markdown("Your previous Q&A (latest first).")
         df = load_all_chats()
@@ -1164,44 +536,16 @@ def student_dashboard():
                         st.write(teacher_feedback)
 
 
-
-# Add this function to your main.py for student-specific saves
-def save_student_chat(student: str, question: str, ai_response: str, course_id: Optional[int] = None,
-                     bloom_level: str = "", ai_analysis: str = ""):
-    """Simplified save function for student chats"""
-    conn = get_conn()
-    cur = conn.cursor()
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    cur.execute("""
-        INSERT INTO chats (
-            timestamp, student, course_id, question, ai_response, 
-            teacher_feedback, bloom_level, ai_analysis
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        ts, student, course_id, question, ai_response,
-        "", bloom_level, ai_analysis
-    ))
-
-    conn.commit()
-    df = pd.read_sql_query("SELECT * FROM chats ORDER BY id", conn)
-    df.to_csv(CSV_CHAT_LOG, index=False)
-    conn.close()
-
-
-
 def teacher_dashboard():
     st.title(f"🧑‍🏫 Teacher — {st.session_state.get('full_name') or st.session_state.get('username')}")
 
-    # Import and use the teacher interface
+    # Try to import the teacher interface, fallback to basic
     try:
         from pages.teacher import teacher_interface
         teacher_interface()
     except ImportError:
         # Fallback to simple teacher interface
         st.warning("Full teacher interface not available. Using basic interface.")
-        # Your existing basic teacher interface code here
         render_course_management()
         render_student_review()
 
@@ -1381,9 +725,8 @@ def render_student_review():
 
 # ---------- BOOT & ROUTER ----------
 def run_app():
-    # DB init & safe upgrade
-    init_db()
-    upgrade_db()
+    # Use robust database initialization
+    ensure_db_initialized()
 
     top_logout()
 
