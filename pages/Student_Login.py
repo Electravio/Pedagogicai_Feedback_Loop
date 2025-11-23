@@ -22,6 +22,9 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 def student_login():
+    from db import show_persistence_warning
+    show_persistence_warning()  # ADD THIS LINE
+    
     st.title("🎓 Student Portal")
 
     # Navigation
@@ -76,3 +79,4 @@ def student_login():
 
 if __name__ == "__main__":
     student_login()
+
