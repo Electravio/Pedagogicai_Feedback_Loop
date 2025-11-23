@@ -4,11 +4,6 @@ import pandas as pd
 import hashlib
 from datetime import datetime
 import os
-import streamlit as st
-from db import ensure_db_initialized
-
-# Ensure database is initialized before anything else
-ensure_db_initialized()
 
 try:
     import bcrypt
@@ -272,7 +267,14 @@ def add_user(username, hashed_password, role, full_name=""):
             """, (username, hashed_password, role, full_name))
 
         conn.commit()
-        return True, "Registration successful."
+        
+        # Verify the user was actually created
+        verify_user = get_user(username)
+        if verify_user:
+            return True, "Registration successful."
+        else:
+            return False, "Registration failed - user not found after creation."
+            
     except sqlite3.IntegrityError:
         return False, "Username already exists."
     except Exception as e:
@@ -324,7 +326,7 @@ def save_chat(student, question, ai_response, course_id=None,
               teacher_feedback="", bloom_level="",
               cognitive_state="", risk_level="", cheating_flag="",
               ai_emotion="", ai_confusion="", ai_dependency="",
-              ai_intervention="", confusion_score=0):
+              ai_intervention="", confusion_score=0, ai_analysis=""):
     conn = get_conn()
     cur = conn.cursor()
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -333,7 +335,21 @@ def save_chat(student, question, ai_response, course_id=None,
     cur.execute("PRAGMA table_info(chats)")
     columns = [col[1] for col in cur.fetchall()]
 
-    if 'course_id' in columns:
+    if 'course_id' in columns and 'ai_analysis' in columns:
+        cur.execute("""
+            INSERT INTO chats (
+                timestamp, student, course_id, question, ai_response, teacher_feedback,
+                bloom_level, cognitive_state, risk_level, cheating_flag,
+                ai_emotion, ai_confusion, ai_dependency, ai_intervention,
+                confusion_score, ai_analysis
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (ts, student, course_id, question, ai_response, teacher_feedback,
+              bloom_level, cognitive_state, risk_level, cheating_flag,
+              ai_emotion, ai_confusion, ai_dependency, ai_intervention,
+              confusion_score, ai_analysis))
+    elif 'course_id' in columns:
+        # Fallback without ai_analysis
         cur.execute("""
             INSERT INTO chats (
                 timestamp, student, course_id, question, ai_response, teacher_feedback,
@@ -374,13 +390,26 @@ def save_chat(student, question, ai_response, course_id=None,
 # -------------------------------------------------
 def load_all_chats():
     conn = get_conn()
-    df = pd.read_sql_query("""
-        SELECT *
-        FROM chats
-        ORDER BY id DESC
-    """, conn)
-    conn.close()
-    return df
+    try:
+        # Check if chats table exists first
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chats'")
+        table_exists = cur.fetchone() is not None
+
+        if not table_exists:
+            return pd.DataFrame()  # Return empty DataFrame
+
+        df = pd.read_sql_query("""
+            SELECT *
+            FROM chats
+            ORDER BY id DESC
+        """, conn)
+        return df
+    except Exception as e:
+        print(f"Error loading chats: {e}")
+        return pd.DataFrame()  # Return empty DataFrame on error
+    finally:
+        conn.close()
 
 
 # -------------------------------------------------
@@ -525,6 +554,52 @@ def get_student_courses(student_username):
 
     conn.close()
     return courses
+
+
+def get_course_students(course_id):
+    """Get all students enrolled in a course"""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT u.username, u.full_name, e.enrolled_at
+        FROM users u
+        JOIN enrollments e ON u.id = e.student_id
+        WHERE e.course_id = ?
+        ORDER BY u.username
+    """, (course_id,))
+
+    students = []
+    for row in cur.fetchall():
+        students.append({
+            "username": row[0],
+            "full_name": row[1],
+            "enrolled_at": row[2]
+        })
+
+    conn.close()
+    return students
+
+
+def load_chats_by_course(course_id, limit=None):
+    """Load chats for a specific course"""
+    conn = get_conn()
+    if not conn:
+        return pd.DataFrame()
+
+    query = """
+        SELECT id, timestamp, student, question, ai_response, teacher_feedback, 
+               bloom_level, cheating_flag, ai_analysis, override_cycle
+        FROM chats 
+        WHERE course_id = ?
+        ORDER BY id DESC
+    """
+    if limit:
+        query += f" LIMIT {int(limit)}"
+
+    df = pd.read_sql_query(query, conn, params=(course_id,))
+    conn.close()
+    return df
 
 
 # -------------------------------------------------
@@ -756,4 +831,3 @@ def ensure_db_initialized():
 
 # Initialize immediately on import
 ensure_db_initialized()
-
