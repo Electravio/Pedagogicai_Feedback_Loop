@@ -12,14 +12,20 @@ try:
 except ImportError:
     HAVE_BCRYPT = False
 
-# Use Streamlit's persistent storage on Cloud
-@st.cache_resource
-def get_conn():
-    # On Streamlit Cloud, this will persist between deployments
-    return sqlite3.connect("users_chats.db", check_same_thread=False)
+# Use persistent storage on Streamlit Cloud
+if "STREAMLIT_CLOUD" in os.environ:
+    DB_FILE = "/tmp/users_chats.db"  # Persistent storage on Streamlit Cloud
+else:
+    DB_FILE = "users_chats.db"  # Local development
 
-DB_FILE = "users_chats.db"
 CSV_CHAT_LOG = "chat_feedback_log.csv"
+
+# -------------------------------------------------
+# DATABASE CONNECTION
+# -------------------------------------------------
+def get_conn():
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
+
 
 # -------------------------------------------------
 # INITIALIZE DATABASE (fresh installations)
@@ -827,5 +833,6 @@ def ensure_db_initialized():
 
 # Initialize immediately on import
 ensure_db_initialized()
+
 
 
