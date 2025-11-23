@@ -5,26 +5,14 @@ import hashlib
 from datetime import datetime
 import os
 
-try:
-    import bcrypt
-
-    HAVE_BCRYPT = True
-except ImportError:
-    HAVE_BCRYPT = False
-
 PERSISTENT_DIR = "/mount/data/db"
-os.makedirs(PERSISTENT_DIR, exist_ok=True)
-
 DB_FILE = f"{PERSISTENT_DIR}/users_chats.db"
 
-CSV_CHAT_LOG = "chat_feedback_log.csv"
-
-
-# -------------------------------------------------
-# DATABASE CONNECTION
-# -------------------------------------------------
 def get_conn():
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
+    # Ensure folder exists BEFORE connecting
+    os.makedirs(PERSISTENT_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    return conn
 
 
 # -------------------------------------------------
@@ -735,5 +723,6 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
+
 
 
