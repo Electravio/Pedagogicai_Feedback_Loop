@@ -21,10 +21,6 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-# Add this function to your original db.py
-def show_persistence_warning():
-    st.sidebar.warning("🚨 DEMO MODE: User data resets after app restart")
-
 def student_login():
     st.title("🎓 Student Portal")
 
@@ -80,3 +76,4 @@ def student_login():
 
 if __name__ == "__main__":
     student_login()
+
