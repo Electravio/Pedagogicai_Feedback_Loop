@@ -1,25 +1,9 @@
 # app.py
 import streamlit as st
-import os
-import sqlite3  # ADD THIS IMPORT
-from db import ensure_db_initialized, DB_FILE
+from db import ensure_db_initialized
 
-# DEBUG: Check database state
-ensure_db_initialized()  # THIS IS THE KEY LINE - ensures DB is always initialized
-
-st.write("🔍 DEBUG: Database file exists:", os.path.exists(DB_FILE))
-st.write("🔍 DEBUG: Database path:", DB_FILE)
-
-# Check current users in database (debug - remove later)
-try:
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("SELECT username, role FROM users")
-    users = cur.fetchall()
-    st.write("🔍 DEBUG: Current users in database:", users)
-    conn.close()
-except Exception as e:
-    st.write("🔍 DEBUG: Error checking users:", e)
+# Initialize database first - THIS IS THE KEY FIX
+ensure_db_initialized()
 
 st.set_page_config(
     page_title="Pedagogical Feedback Loop",
@@ -57,4 +41,3 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
-
