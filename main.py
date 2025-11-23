@@ -47,12 +47,7 @@ except Exception:
 
 # ---------- CONFIG ----------
 PERSISTENT_DIR = "/mount/data/db"
-os.makedirs(PERSISTENT_DIR, exist_ok=True)
-
 DB_FILE = f"{PERSISTENT_DIR}/users_chats.db"
-
-CSV_CHAT_LOG = "chat_feedback_log.csv"
-MAX_OVERRIDE_CYCLES = 3  # limit teacher override updates
 
 # ---------- STREAMLIT PAGE SETUP ----------
 st.set_page_config(page_title="Pedagogical Feedback Loop", layout="wide", initial_sidebar_state="collapsed")
