@@ -1,9 +1,7 @@
 # app.py
 import streamlit as st
-from db import ensure_db_initialized
-
-# Initialize database first - THIS IS THE KEY FIX
-ensure_db_initialized()
+import os  # Add this import
+from db import init_db, DB_FILE  # Import DB_FILE from db module
 
 st.set_page_config(
     page_title="Pedagogical Feedback Loop",
@@ -41,3 +39,4 @@ def main_landing():
 
 if __name__ == "__main__":
     main_landing()
+
