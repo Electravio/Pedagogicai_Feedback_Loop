@@ -1,6 +1,21 @@
-# pages2/3_Teacher_Login.py
+# pages2/1_Student_Login.py
 import streamlit as st
-from db import get_user, verify_password, hash_password, add_user  # Changed from main.py to db.py
+from db import get_user, verify_password, hash_password, add_user, ensure_db_initialized
+import sqlite3
+import os
+from db import DB_FILE
+
+# DEBUG: Check database state
+ensure_db_initialized()
+
+# Debug info
+conn = sqlite3.connect(DB_FILE)
+cur = conn.cursor()
+cur.execute("SELECT username, role FROM users")
+users = cur.fetchall()
+st.sidebar.write("🔍 DEBUG: Current users:", users)
+conn.close()
+
 
 st.set_page_config(
     page_title="Teacher Login",
@@ -84,3 +99,4 @@ def teacher_login():
 
 if __name__ == "__main__":
     teacher_login()
+
