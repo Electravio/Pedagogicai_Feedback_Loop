@@ -18,6 +18,9 @@ def get_conn():
     # On Streamlit Cloud, this will persist between deployments
     return sqlite3.connect("users_chats.db", check_same_thread=False)
 
+DB_FILE = "users_chats.db"
+CSV_CHAT_LOG = "chat_feedback_log.csv"
+
 # -------------------------------------------------
 # INITIALIZE DATABASE (fresh installations)
 # -------------------------------------------------
@@ -824,4 +827,5 @@ def ensure_db_initialized():
 
 # Initialize immediately on import
 ensure_db_initialized()
+
 
