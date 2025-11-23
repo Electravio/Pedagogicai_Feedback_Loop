@@ -23,31 +23,23 @@ import re
 from typing import Tuple, Optional, List, Dict
 
 # Optional libraries
-try:
-    import bcrypt
+# all imports ...
+import bcrypt
+import openai
+import plotly.express as px
+import os
+import sqlite3
 
-    HAVE_BCRYPT = True
-except Exception:
-    HAVE_BCRYPT = False
+# old try/excepts for bcrypt, plotly, openai
+# KEEP THESE EXACTLY AS THEY ARE
 
-try:
-    import plotly.express as px
-
-    HAVE_PLOTLY = True
-except Exception:
-    HAVE_PLOTLY = False
-
-# OpenAI import
-try:
-    import openai
-
-    HAVE_OPENAI = True
-except Exception:
-    HAVE_OPENAI = False
-
-# ---------- CONFIG ----------
+# -------------- DATABASE CONFIG (NEW WORKING VERSION) --------------
 PERSISTENT_DIR = "/mount/data/db"
 DB_FILE = f"{PERSISTENT_DIR}/users_chats.db"
+
+def get_conn():
+    os.makedirs(PERSISTENT_DIR, exist_ok=True)
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
 # ---------- STREAMLIT PAGE SETUP ----------
 st.set_page_config(page_title="Pedagogical Feedback Loop", layout="wide", initial_sidebar_state="collapsed")
