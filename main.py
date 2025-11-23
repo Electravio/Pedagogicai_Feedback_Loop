@@ -46,7 +46,9 @@ except Exception:
     HAVE_OPENAI = False
 
 # ---------- CONFIG ----------
-DB_FILE = "users_chats.db"
+os.makedirs("/mount/db", exist_ok=True)
+DB_FILE = "/mount/db/users_chats.db"
+
 CSV_CHAT_LOG = "chat_feedback_log.csv"
 MAX_OVERRIDE_CYCLES = 3  # limit teacher override updates
 
