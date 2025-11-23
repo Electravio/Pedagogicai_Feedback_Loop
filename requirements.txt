@@ -7,3 +7,4 @@ openai==1.98.0
 bcrypt
 plotly
 numpy
+psycopg2-binary
