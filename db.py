@@ -12,8 +12,10 @@ try:
 except ImportError:
     HAVE_BCRYPT = False
 
-os.makedirs("/mount/db", exist_ok=True)
-DB_FILE = "/mount/db/users_chats.db"
+PERSISTENT_DIR = "/mount/data/db"
+os.makedirs(PERSISTENT_DIR, exist_ok=True)
+
+DB_FILE = f"{PERSISTENT_DIR}/users_chats.db"
 
 CSV_CHAT_LOG = "chat_feedback_log.csv"
 
@@ -733,4 +735,5 @@ else:
         conn.close()
     except Exception as e:
         print(f"DB init check skipped: {e}")
+
 
