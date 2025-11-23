@@ -1,6 +1,6 @@
 # pages2/3_Teacher_Login.py
 import streamlit as st
-from main import get_user, verify_password, hash_password, add_user
+from db import get_user, verify_password, hash_password, add_user  # Changed from main.py to db.py
 
 st.set_page_config(
     page_title="Teacher Login",
