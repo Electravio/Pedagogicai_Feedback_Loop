@@ -4,10 +4,38 @@ import pandas as pd
 import os
 from typing import List, Dict, Optional, Tuple
 from main import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
-    get_student_courses, get_conn, load_chat_memory_from_db
+    get_student_courses, get_conn, init_db, upgrade_db
 
 # MUST be at the very top - before any other Streamlit commands
 st.set_page_config(page_title="Student Dashboard", layout="wide")
+
+# Add the missing function directly here
+def load_chat_memory_from_db(student_username, limit=10):
+    """Load recent chat history for a student from database"""
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("""
+            SELECT question, ai_response 
+            FROM chats 
+            WHERE student = ? 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        """, (student_username, limit))
+        
+        history = []
+        for question, response in cur.fetchall():
+            history.append({"role": "user", "content": question})
+            history.append({"role": "assistant", "content": response})
+        
+        # Reverse to maintain chronological order
+        return history[::-1]
+    except Exception as e:
+        print(f"Error loading chat memory: {e}")
+        return []
+    finally:
+        conn.close()
 
 # Strict authentication check
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
@@ -15,6 +43,7 @@ if "logged_in" not in st.session_state or st.session_state.get("role") != "stude
     if st.button("Go to Student Login"):
         st.switch_page("pages/1_Student_Login.py")
     st.stop()
+
 
 def get_ai_response_with_memory(messages: List[Dict]) -> Tuple[str, str]:
     """
@@ -461,3 +490,4 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
+
