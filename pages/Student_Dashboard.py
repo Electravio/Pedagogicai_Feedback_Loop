@@ -15,7 +15,7 @@ def _openai_key():
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
     st.error("Access denied. Please log in as a student.")
     if st.button("Go to Student Login"):
-        st.switch_page("pages2/1_Student_Login.py")  # Fixed path
+        st.switch_page("pages/Student_Login.py")  # Fixed path
     st.stop()
 
 
@@ -144,6 +144,12 @@ def student_dashboard():
                     # Add new question
                     messages.append({"role": "user", "content": question})
 
+                    # Force long answer (5+ paragraphs)
+                    messages.append({
+                        "role": "system",
+                        "content": "Your answer MUST be at least 5 paragraphs, detailed, structured, and rich with examples."
+                    })
+
                     # Add language override
                     if language_override != "Auto-detect":
                         messages.append({
@@ -156,10 +162,32 @@ def student_dashboard():
                         key = _openai_key()
                         client = OpenAI(api_key=key)
 
+                        detailed_system = """
+                            You are a highly advanced educational assistant similar to ChatGPT.
+                            Your responses MUST be:
+                            
+                            - Detailed (250–600 words depending on question complexity)
+                            - Well-structured using paragraphs, headings, bullet points
+                            - Clear and beginner-friendly but academically strong
+                            - Example-rich
+                            - Correct in the user’s language
+                            - NEVER short unless the question specifically asks for short answers
+                            
+                            ALWAYS provide:
+                            1. Explanation  
+                            2. Breakdown of concepts  
+                            3. Step-by-step reasoning  
+                            4. Practical examples / applications  
+                            5. Summary at the end  
+                            """
+                       messages.insert(0, {"role": "system", "content": detailed_system})
+
                         response = client.chat.completions.create(
                             model="gpt-3.5-turbo",
                             messages=messages,
                             temperature=0.7
+                            max_token=2000
+                            top_p=0.9
                         )
                         ai_answer = response.choices[0].message.content
 
@@ -481,3 +509,4 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
+
