@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 from hf_db import get_hf_db
+import streamlit as st
 
 class HybridDB:
     def __init__(self):
@@ -11,6 +12,30 @@ class HybridDB:
         
     def get_conn(self):
         return sqlite3.connect(self.local_db_file, check_same_thread=False)
+    
+    def is_local_db_empty(self):
+        """Check if local database has any users"""
+        try:
+            conn = self.get_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM users")
+            user_count = cur.fetchone()[0]
+            conn.close()
+            return user_count == 0
+        except:
+            return True
+    
+    def auto_restore_on_startup(self):
+        """Automatically restore from Hugging Face if local DB is empty"""
+        if self.is_local_db_empty():
+            st.info("🔄 No local data found. Restoring from cloud backup...")
+            success = self.sync_from_hf()
+            if success:
+                st.success("✅ Data restored from cloud!")
+            else:
+                st.warning("❌ Cloud restore failed. Starting with fresh local database.")
+            return success
+        return True
     
     def sync_to_hf(self):
         """Sync all tables to Hugging Face"""
