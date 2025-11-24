@@ -10,7 +10,7 @@ Features:
  - Developer analytics (hidden role).
  - OpenAI integration via st.secrets["OPENAI_API_KEY"] (fallback simulated behavior if missing).
 """
-
+from hybrid_db import hybrid_db
 import streamlit as st
 from openai import OpenAI
 import sqlite3
