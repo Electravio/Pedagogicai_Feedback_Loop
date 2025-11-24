@@ -170,7 +170,7 @@ def student_dashboard():
                             - Well-structured using paragraphs, headings, bullet points
                             - Clear and beginner-friendly but academically strong
                             - Example-rich
-                            - Correct in the user’s language
+                            - Correct in the user's language
                             - NEVER short unless the question specifically asks for short answers
                             
                             ALWAYS provide:
@@ -180,13 +180,13 @@ def student_dashboard():
                             4. Practical examples / applications  
                             5. Summary at the end  
                             """
-                       messages.insert(0, {"role": "system", "content": detailed_system})
+                        messages.insert(0, {"role": "system", "content": detailed_system})
 
                         response = client.chat.completions.create(
                             model="gpt-3.5-turbo",
                             messages=messages,
-                            temperature=0.7
-                            max_token=2000
+                            temperature=0.7,
+                            max_tokens=2000,
                             top_p=0.9
                         )
                         ai_answer = response.choices[0].message.content
@@ -509,4 +509,3 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
-
