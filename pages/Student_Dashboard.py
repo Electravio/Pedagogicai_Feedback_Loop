@@ -1,49 +1,25 @@
 # pages/2_Student_Dashboard.py
 import streamlit as st
 import pandas as pd
-from db import save_chat, load_all_chats, get_student_courses, get_conn, ensure_db_initialized  # Changed from main to db
-from main import get_ai_response, analyze_student_state, classify_bloom, detect_cheating  # Keep AI functions from main
-from typing import List, Dict, Optional, Tuple
-from openai import OpenAI
-
-def _openai_key():
-    """Get OpenAI API key from environment or Streamlit secrets"""
-    return st.secrets.get("OPENAI_API_KEY", "")
-
+from main import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
+    get_student_courses, get_conn, save_student_chat
+from main import init_db, upgrade_db  # Add these imports
+from typing import List, Dict, Optional, Tuple  # Add this import
 
 # Strict authentication check
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
     st.error("Access denied. Please log in as a student.")
     if st.button("Go to Student Login"):
-        st.switch_page("pages2/1_Student_Login.py")  # Fixed path
+        st.switch_page("pages/Student_Login.py")  # Fixed path - should be 1_Student_Login.py
     st.stop()
-
-
-def load_course_memory_from_db(username, course_id):
-    """Load past Q&A by this student for this specific course."""
-    df = load_all_chats()
-    if df.empty:
-        return []
-
-    # filter: same student + same course
-    history = df[
-        (df["student"] == username) &
-        (df["course_id"] == course_id)
-    ].sort_values(by="id")
-
-    messages = []
-    for _, row in history.iterrows():
-        messages.append({"role": "user", "content": row["question"]})
-        messages.append({"role": "assistant", "content": row["ai_response"]})
-
-    return messages
 
 
 def student_dashboard():
     st.set_page_config(page_title="Student Dashboard", layout="wide")
 
-    # Initialize database at the start - use robust initialization
-    ensure_db_initialized()
+    # Initialize database at the start
+    init_db()
+    upgrade_db()
 
     # Header with navigation
     col1, col2 = st.columns([4, 1])
@@ -101,14 +77,11 @@ def student_dashboard():
 
         language_override = st.selectbox(
             "Answer language",
-            ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic", "Turkish", "Russian", "Hindi", "Portuguese", "German", "Italian", "Korean", "Japanese"],
+            ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic"],
             index=0,
             help="Choose the language for the AI response"
         )
 
-        # ------------------------------
-        # ASK AI BUTTON (INSIDE TAB)
-        # ------------------------------
         if st.button("🚀 Ask AI", type="primary"):
             if not question.strip():
                 st.warning("Please write a question.")
@@ -116,79 +89,40 @@ def student_dashboard():
                 st.warning("Please select a course.")
             else:
                 with st.spinner("🤔 Getting detailed AI answer..."):
-
-                    # Load course memory
-                    course_memory = load_course_memory_from_db(
-                        st.session_state["username"],
-                        course_id
-                    )
-
-                    # Build GPT messages
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a helpful educational tutoring assistant. "
-                                "Use ONLY this student's previous questions and answers "
-                                "from THIS SAME COURSE to understand their learning level. "
-                                "Do NOT reference or use memory from other courses. "
-                                "Continue the conversation naturally and consistently."
-                            )
-                        }
-                    ]
-
-                    # Add memory if exists
-                    if course_memory:
-                        messages += course_memory
-
-                    # Add new question
-                    messages.append({"role": "user", "content": question})
-
-                    # Add language override
+                    # Enhanced prompt with course context
+                    course_context = f" (related to {selected_course})" if selected_course else ""
                     if language_override != "Auto-detect":
-                        messages.append({
-                            "role": "system",
-                            "content": f"Respond ONLY in {language_override}."
-                        })
+                        enhanced_prompt = f"Please provide a comprehensive, detailed answer in {language_override} to the following course-related question{course_context}:\n\n{question}"
+                    else:
+                        enhanced_prompt = f"Please provide a comprehensive and detailed answer to the following course-related question{course_context}. Respond in the same language as the question:\n\n{question}"
 
-                    # Call OpenAI
-                    try:
-                        key = _openai_key()
-                        client = OpenAI(api_key=key)
+                    ai_answer, err = get_ai_response(enhanced_prompt)
 
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=messages,
-                            temperature=0.7
+                    if err:
+                        st.error(f"❌ AI error: {err}")
+                    else:
+                        # Run analyses in background for teacher (but don't show to student)
+                        analysis = analyze_student_state(question, ai_answer)
+                        bloom, bloom_reason = classify_bloom(question)
+                        cheating, cheat_reason = detect_cheating(question, ai_answer)
+
+                        # Save all data for teacher review WITH COURSE ID
+                        # Replace the save_chat call with:
+                        save_student_chat(
+                            student=st.session_state["username"],
+                            question=question,
+                            ai_response=ai_answer,
+                            course_id=course_id,
+                            bloom_level=bloom,
+                            ai_analysis=analysis
                         )
-                        ai_answer = response.choices[0].message.content
 
-                    except Exception as e:
-                        st.error(f"❌ AI error: {e}")
-                        st.stop()
+                        st.success("✅ Answer saved! Your teacher will review it and may provide additional feedback.")
+                        st.markdown("### 🤖 AI Response")
+                        st.info(ai_answer)
 
-                    # Teacher analytics
-                    analysis = analyze_student_state(question, ai_answer)
-                    bloom, bloom_reason = classify_bloom(question)
-                    cheating, cheat_reason = detect_cheating(question, ai_answer)
-
-                    # Save chat - use the main save_chat function from db.py
-                    save_chat(
-                        student=st.session_state["username"],
-                        question=question,
-                        ai_response=ai_answer,
-                        course_id=course_id,
-                        teacher_feedback="",
-                        bloom_level=bloom,
-                        ai_analysis=analysis,
-                        cheating_flag="1" if cheating else "0"
-                    )
-
-                    # Display answer
-                    st.success("✅ Answer saved! Your teacher will review it.")
-                    st.markdown("### 🤖 AI Response")
-                    st.info(ai_answer)
-                    st.caption(f"📚 Saved under: {selected_course}")
+                        # Show course context
+                        st.caption(f"📚 This question was saved under: {selected_course}")
 
     with tab_history:
         st.markdown("### 📖 Your Previous Q&A")
