@@ -3,8 +3,8 @@ import streamlit as st
 import pandas as pd
 import os
 from typing import List, Dict, Optional, Tuple
-from main import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
-    get_student_courses, get_conn, init_db, upgrade_db
+from db import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
+    get_student_courses, get_conn, init_db, upgrade_db, load_chat_memory_from_db
 
 # MUST be at the very top - before any other Streamlit commands
 st.set_page_config(page_title="Student Dashboard", layout="wide")
@@ -490,4 +490,5 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
 
 if __name__ == "__main__":
     student_dashboard()
+
 
