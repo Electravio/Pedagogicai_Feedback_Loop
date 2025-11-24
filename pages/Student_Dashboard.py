@@ -1,19 +1,21 @@
 # pages/2_Student_Dashboard.py
 import streamlit as st
 import pandas as pd
-from main import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
-    get_student_courses, get_conn, load_chat_memory_from_db Keep AI functions from main
-from db import save_chat, load_all_chats, get_student_courses, get_conn, ensure_db_initialized  # Database functions from db.py
+import os
 from typing import List, Dict, Optional, Tuple
+from main import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
+    get_student_courses, get_conn, load_chat_memory_from_db
+
+# MUST be at the very top - before any other Streamlit commands
+st.set_page_config(page_title="Student Dashboard", layout="wide")
 
 # Strict authentication check
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
     st.error("Access denied. Please log in as a student.")
     if st.button("Go to Student Login"):
-        st.switch_page("pages/Student_Login.py")
+        st.switch_page("pages/1_Student_Login.py")
     st.stop()
 
-# ADD THE HELPER FUNCTION RIGHT HERE:
 def get_ai_response_with_memory(messages: List[Dict]) -> Tuple[str, str]:
     """
     Get AI response with chat memory context
@@ -40,12 +42,12 @@ def get_ai_response_with_memory(messages: List[Dict]) -> Tuple[str, str]:
     except Exception as e:
         return "", str(e)
 
-
 def student_dashboard():
-    st.set_page_config(page_title="Student Dashboard", layout="wide")
+    # REMOVED st.set_page_config() from here - it's now at the top
 
-    # Initialize database at the start - USE THE NEW FUNCTION
-    ensure_db_initialized()
+    # Initialize database at the start
+    init_db()
+    upgrade_db()
 
     # Header with navigation
     col1, col2 = st.columns([4, 1])
@@ -56,7 +58,7 @@ def student_dashboard():
         if st.button("Logout"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
-            st.switch_page("app.py")
+            st.switch_page("pages/1_Student_Login.py")
 
     # Get student's enrolled courses
     student_courses = get_student_courses(st.session_state["username"])
@@ -66,8 +68,10 @@ def student_dashboard():
         st.info("Once enrolled, you'll be able to ask course-related questions here.")
         return
 
+    # ENHANCEMENT: Add new tabs including "My Progress"
     tab_new, tab_history, tab_progress = st.tabs(["New Chat", "Chat History", "My Progress"])
 
+    # ENHANCEMENT 1: Personal Learning Analytics
     with tab_progress:
         render_student_progress()
 
@@ -90,12 +94,13 @@ def student_dashboard():
         if current_course:
             st.caption(f"👨‍🏫 Teacher: {current_course.get('teacher_name', 'Unknown')}")
 
+        # ENHANCEMENT 2: Adaptive Question Assistant
         enhanced_question_assistant()
 
         question = st.text_area(
             "Your question *",
             height=180,
-            placeholder="Type your question about the course content..."
+            placeholder="Type your question about the course content...\nExample: 'Can you explain the concept of photosynthesis in simple terms?'"
         )
 
         language_override = st.selectbox(
@@ -105,82 +110,79 @@ def student_dashboard():
             help="Choose the language for the AI response"
         )
 
-        # In your "Ask AI" button section, replace the current implementation with:
-
-if st.button("🚀 Ask AI", type="primary"):
-    if not question.strip():
-        st.warning("Please write a question.")
-    elif not selected_course:
-        st.warning("Please select a course.")
-    else:
-        with st.spinner("🤔 Getting detailed AI answer..."):
-            # Load chat memory from database
-            chat_history = load_chat_memory_from_db(st.session_state["username"])
-            
-            # Build the enhanced prompt with course context
-            course_context = f" (related to {selected_course})" if selected_course else ""
-            
-            # Prepare messages for OpenAI with memory
-            messages = [
-                {
-                    "role": "system", 
-                    "content": f"""You are a helpful multilingual educational assistant. 
-                    CRITICAL INSTRUCTIONS:
-                    1. Detect the language the user is writing in and respond in the EXACT SAME LANGUAGE
-                    2. Provide comprehensive, well-structured, and detailed explanations
-                    3. Use proper formatting with paragraphs, bullet points, and examples when helpful
-                    4. Aim for 300-500 words for complex questions, 150-300 words for simpler ones
-                    5. Break down complex concepts into understandable parts
-                    6. Include practical examples and applications when relevant
-                    7. Use the student's chat history as context to provide consistent, personalized responses
-                    8. Build upon previous conversations and maintain continuity
-                    
-                    Course Context: This question is about {selected_course}
-                    Always prioritize clarity and educational value over brevity."""
-                }
-            ]
-            
-            # Add chat history for context
-            messages.extend(chat_history)
-            
-            # Add current question
-            messages.append({"role": "user", "content": question})
-            
-            # Language override
-            if language_override != "Auto-detect":
-                messages.append({
-                    "role": "system", 
-                    "content": f"IMPORTANT: Respond ONLY in {language_override}."
-                })
-
-            # Get AI response with memory context
-            ai_answer, err = get_ai_response_with_memory(messages)
-
-            if err:
-                st.error(f"❌ AI error: {err}")
+        if st.button("🚀 Ask AI", type="primary"):
+            if not question.strip():
+                st.warning("Please write a question.")
+            elif not selected_course:
+                st.warning("Please select a course.")
             else:
-                # Run analyses for teacher
-                analysis = analyze_student_state(question, ai_answer)
-                bloom, bloom_reason = classify_bloom(question)
-                cheating, cheat_reason = detect_cheating(question, ai_answer)
+                with st.spinner("🤔 Getting detailed AI answer..."):
+                    # Load chat memory from database
+                    chat_history = load_chat_memory_from_db(st.session_state["username"])
+                    
+                    # Build the enhanced prompt with course context
+                    course_context = f" (related to {selected_course})" if selected_course else ""
+                    
+                    # Prepare messages for OpenAI with memory
+                    messages = [
+                        {
+                            "role": "system", 
+                            "content": f"""You are a helpful multilingual educational assistant. 
+                            CRITICAL INSTRUCTIONS:
+                            1. Detect the language the user is writing in and respond in the EXACT SAME LANGUAGE
+                            2. Provide comprehensive, well-structured, and detailed explanations
+                            3. Use proper formatting with paragraphs, bullet points, and examples when helpful
+                            4. Aim for 300-500 words for complex questions, 150-300 words for simpler ones
+                            5. Break down complex concepts into understandable parts
+                            6. Include practical examples and applications when relevant
+                            7. Use the student's chat history as context to provide consistent, personalized responses
+                            8. Build upon previous conversations and maintain continuity
+                            
+                            Course Context: This question is about {selected_course}
+                            Always prioritize clarity and educational value over brevity."""
+                        }
+                    ]
+                    
+                    # Add chat history for context
+                    messages.extend(chat_history)
+                    
+                    # Add current question
+                    messages.append({"role": "user", "content": question})
+                    
+                    # Language override
+                    if language_override != "Auto-detect":
+                        messages.append({
+                            "role": "system", 
+                            "content": f"IMPORTANT: Respond ONLY in {language_override}."
+                        })
 
-                # Save to database WITH COURSE ID and MEMORY
-                save_chat(
-                    student=st.session_state["username"],
-                    question=question,
-                    ai_response=ai_answer,
-                    course_id=course_id,
-                    bloom_level=bloom,
-                    ai_analysis=analysis
-                )
+                    # Get AI response with memory context
+                    ai_answer, err = get_ai_response_with_memory(messages)
 
-                st.success("✅ Answer saved! Your teacher will review it and may provide additional feedback.")
-                st.markdown("### 🤖 AI Response")
-                st.info(ai_answer)
+                    if err:
+                        st.error(f"❌ AI error: {err}")
+                    else:
+                        # Run analyses for teacher
+                        analysis = analyze_student_state(question, ai_answer)
+                        bloom, bloom_reason = classify_bloom(question)
+                        cheating, cheat_reason = detect_cheating(question, ai_answer)
 
-                # Show course context
-                st.caption(f"📚 This question was saved under: {selected_course}")
+                        # Save to database WITH COURSE ID and MEMORY
+                        save_chat(
+                            student=st.session_state["username"],
+                            question=question,
+                            ai_response=ai_answer,
+                            course_id=course_id,
+                            bloom_level=bloom,
+                            ai_analysis=analysis
+                        )
 
+                        st.success("✅ Answer saved! Your teacher will review it and may provide additional feedback.")
+                        st.markdown("### 🤖 AI Response")
+                        st.info(ai_answer)
+
+                        # Show course context
+                        st.caption(f"📚 This question was saved under: {selected_course}")
 
     with tab_history:
         st.markdown("### 📖 Your Previous Q&A")
@@ -207,6 +209,7 @@ if st.button("🚀 Ask AI", type="primary"):
             if df.empty:
                 st.info("No chats recorded yet. Ask your first question!")
             else:
+                # Filter by student and optionally by course
                 my_chats = df[df["student"] == st.session_state["username"]].copy()
 
                 if my_chats.empty:
@@ -214,7 +217,9 @@ if st.button("🚀 Ask AI", type="primary"):
                 else:
                     st.success(f"📊 Found {len(my_chats)} conversation(s) in your history")
 
+                    # Add course information to display
                     for _, row in my_chats.iterrows():
+                        # Get course name for display
                         course_display = ""
                         if row.get('course_id'):
                             course_obj = next(
@@ -228,8 +233,10 @@ if st.button("🚀 Ask AI", type="primary"):
                             with col1:
                                 st.write("**❓ Your Question:**")
                                 st.write(row["question"])
+
                                 st.write("**🤖 AI Answer:**")
                                 st.write(row["ai_response"])
+
                                 st.write("**👨‍🏫 Teacher Feedback:**")
                                 teacher_feedback = row.get("teacher_feedback") or "_No feedback from teacher yet._"
                                 if teacher_feedback != "_No feedback from teacher yet._":
@@ -238,10 +245,13 @@ if st.button("🚀 Ask AI", type="primary"):
                                     st.info(teacher_feedback)
 
                             with col2:
+                                # Additional metadata
                                 if row.get('bloom_level'):
                                     st.write(f"**🧠 Bloom Level:** {row['bloom_level']}")
+
                                 if row.get('override_cycle', 0) > 0:
                                     st.write(f"**🔄 Revisions:** {row['override_cycle']}")
+
                                 if row.get('cheating_flag'):
                                     st.warning("⚠️ Flagged for review")
 
@@ -249,17 +259,179 @@ if st.button("🚀 Ask AI", type="primary"):
             st.error(f"❌ Error loading chat history: {e}")
             st.info("No chat history available yet.")
 
-
+# ENHANCEMENT 1: Personal Learning Analytics
 def render_student_progress():
     st.header("📈 My Learning Journey")
-    # ... (keep all your existing progress functions the same)
-    # These are just display functions so they don't need database access
 
+    # Personal growth metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        # Calculate actual metrics from database
+        total_questions = get_student_question_count(st.session_state["username"])
+        knowledge_level = calculate_knowledge_level(st.session_state["username"])
+        st.metric("Questions Asked", total_questions)
+        st.metric("Knowledge Level", knowledge_level)
 
+    with col2:
+        avg_response_time = "2.3s"  # Placeholder - you can calculate this
+        strongest_area = get_strongest_area(st.session_state["username"])
+        st.metric("Avg. Response Time", avg_response_time)
+        st.metric("Strongest Area", strongest_area)
+
+    with col3:
+        growth_rate = calculate_growth_rate(st.session_state["username"])
+        next_milestone = get_next_milestone(st.session_state["username"])
+        st.metric("Growth Rate", growth_rate)
+        st.metric("Next Milestone", next_milestone)
+
+    # Learning trajectory chart placeholder
+    st.subheader("📊 My Progress Over Time")
+    st.info("📈 Learning progress visualization will appear here as you ask more questions")
+
+    # Skill mastery visualization
+    st.subheader("🎯 Skill Mastery Map")
+    skills = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]
+    levels = calculate_skill_levels(st.session_state["username"])
+
+    for skill, level in zip(skills, levels):
+        st.write(f"**{skill}**")
+        st.progress(level / 100, text=f"{level}% mastery")
+
+    # ENHANCEMENT 3: Learning Path Recommendations
+    learning_recommendations()
+
+# ENHANCEMENT 2: Adaptive Question Assistant
 def enhanced_question_assistant():
     st.subheader("🤔 Smart Question Helper")
-    st.info("💡 Start typing your question above to get real-time feedback!")
 
+    # Question quality feedback (will be populated when user types)
+    question_placeholder = st.empty()
+
+    # This will be updated when the user types in the main question area
+    st.info(
+        "💡 Start typing your question above to get real-time feedback on question quality and improvement suggestions!")
+
+def analyze_question_quality(question):
+    """AI analysis of question clarity and depth"""
+    if not question or len(question.strip()) < 10:
+        return 3, "Question is too short. Try to be more specific."
+    elif len(question) > 500:
+        return 7, "Good detail! Consider breaking complex questions into parts."
+    else:
+        # Simple heuristic - you can enhance this with AI
+        score = min(10, len(question) // 10 + 5)
+        feedback = "Good question! Clear and focused." if score > 7 else "Try to add more context for a better answer."
+        return score, feedback
+
+def classify_question_complexity(question):
+    """Categorize question cognitive level"""
+    q = question.lower()
+    if any(k in q for k in ["create", "design", "invent", "build", "compose"]):
+        return "Create 🎨"
+    elif any(k in q for k in ["judge", "evaluate", "assess", "critique", "recommend"]):
+        return "Evaluate ⚖️"
+    elif any(k in q for k in ["analyze", "compare", "contrast", "examine", "differentiate"]):
+        return "Analyze 🔍"
+    elif any(k in q for k in ["apply", "use", "solve", "implement", "demonstrate"]):
+        return "Apply 🛠️"
+    elif any(k in q for k in ["explain", "describe", "summarize", "interpret", "discuss"]):
+        return "Understand 📖"
+    else:
+        return "Remember 🧠"
+
+# ENHANCEMENT 3: Learning Path Recommendations
+def learning_recommendations():
+    st.header("🎯 Recommended Next Steps")
+
+    username = st.session_state["username"]
+    recommendations = generate_personalized_recommendations(username)
+
+    for i, rec in enumerate(recommendations):
+        with st.expander(f"{rec['icon']} {rec['type']}: {rec['title']}"):
+            st.write(f"**Why this matters:** {rec['reason']}")
+            st.write(f"**Expected benefit:** {rec['benefit']}")
+            if st.button("Start This", key=f"rec_{i}"):
+                st.session_state.current_learning_path = rec['title']
+                st.success(f"🎯 Started: {rec['title']}")
+
+def generate_personalized_recommendations(username):
+    """Generate learning recommendations based on student's history"""
+    # Placeholder - you can enhance this with actual analytics
+    base_recommendations = [
+        {
+            "type": "Challenge",
+            "icon": "🚀",
+            "title": "Try an evaluation question",
+            "reason": "You're showing strong analytical skills - time for higher-order thinking",
+            "benefit": "Develop critical thinking and judgment abilities"
+        },
+        {
+            "type": "Review",
+            "icon": "🔄",
+            "title": "Revisit foundational concepts",
+            "reason": "Solidifying basics will strengthen your advanced understanding",
+            "benefit": "Build stronger foundation for complex topics"
+        },
+        {
+            "type": "Explore",
+            "icon": "🔍",
+            "title": "Research real-world applications",
+            "reason": "Connecting theory to practice deepens understanding",
+            "benefit": "See how concepts apply in real situations"
+        }
+    ]
+    return base_recommendations
+
+# Helper functions for analytics (placeholders - implement with real data)
+def get_student_question_count(username):
+    """Get total questions asked by student"""
+    try:
+        df = load_all_chats()
+        if df.empty:
+            return 0
+        student_chats = df[df["student"] == username]
+        return len(student_chats)
+    except:
+        return 0
+
+def calculate_knowledge_level(username):
+    """Calculate student's knowledge level based on question complexity"""
+    question_count = get_student_question_count(username)
+    if question_count == 0:
+        return "Beginner"
+    elif question_count < 5:
+        return "Novice"
+    elif question_count < 15:
+        return "Intermediate"
+    else:
+        return "Advanced"
+
+def get_strongest_area(username):
+    """Determine student's strongest cognitive area"""
+    # Placeholder - implement with actual Bloom's level analysis
+    return "Analysis"
+
+def calculate_growth_rate(username):
+    """Calculate learning growth rate"""
+    # Placeholder - implement with time-based analysis
+    return "+12%"
+
+def get_next_milestone(username):
+    """Get next learning milestone"""
+    level = calculate_knowledge_level(username)
+    if level == "Beginner":
+        return "Ask 5 questions"
+    elif level == "Novice":
+        return "Try analysis questions"
+    elif level == "Intermediate":
+        return "Master evaluation"
+    else:
+        return "Creative thinking"
+
+def calculate_skill_levels(username):
+    """Calculate mastery levels for each Bloom's taxonomy skill"""
+    # Placeholder - implement with actual question analysis
+    return [85, 70, 60, 45, 30, 20]  # Remember, Understand, Apply, Analyze, Evaluate, Create
 
 # Add this helper function to load chats by course
 def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.DataFrame:
@@ -287,7 +459,5 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
     finally:
         conn.close()
 
-
 if __name__ == "__main__":
     student_dashboard()
-
