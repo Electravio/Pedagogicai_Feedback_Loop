@@ -539,6 +539,33 @@ def student_dashboard():
 def teacher_dashboard():
     st.title(f"🧑‍🏫 Teacher — {st.session_state.get('full_name') or st.session_state.get('username')}")
 
+    # ADD CLOUD SYNC SECTION RIGHT HERE - at the top of teacher dashboard
+    with st.sidebar.expander("🔁 Cloud Data Sync"):
+        st.write("Backup and restore your data from Hugging Face")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📤 Backup to Cloud", use_container_width=True, type="primary"):
+                with st.spinner("Backing up all data to cloud..."):
+                    if hybrid_db.sync_to_hf():
+                        st.success("✅ Backup completed successfully!")
+                    else:
+                        st.error("❌ Backup failed - check console for details")
+        
+        with col2:
+            if st.button("📥 Restore from Cloud", use_container_width=True):
+                with st.spinner("Restoring data from cloud..."):
+                    if hybrid_db.sync_from_hf():
+                        st.success("✅ Restore completed successfully!")
+                        st.info("Please refresh the page to see restored data")
+                        if st.button("🔄 Refresh Now"):
+                            st.rerun()
+                    else:
+                        st.error("❌ Restore failed - check console for details")
+        
+        st.caption("💡 First time? Click 'Backup to Cloud' to upload your existing data")
+
     # Try to import the teacher interface, fallback to basic
     try:
         from pages.teacher import teacher_interface
