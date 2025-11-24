@@ -539,51 +539,6 @@ def student_dashboard():
 def teacher_dashboard():
     st.title(f"🧑‍🏫 Teacher — {st.session_state.get('full_name') or st.session_state.get('username')}")
 
-    # ADD CLOUD SYNC SECTION RIGHT HERE - at the top of teacher dashboard
-    with st.sidebar.expander("🔁 Cloud Data Sync"):
-        st.write("Backup and restore your data from Hugging Face")
-        
-        # Display sync status
-        try:
-            from hybrid_db import hybrid_db
-            if hybrid_db.is_local_db_empty():
-                st.warning("⚠️ Local database is empty")
-            else:
-                st.success("✅ Local data present")
-        except:
-            pass
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📤 Backup to Cloud", use_container_width=True, type="primary"):
-                with st.spinner("Backing up all data to cloud..."):
-                    try:
-                        from hybrid_db import hybrid_db
-                        if hybrid_db.sync_to_hf():
-                            st.success("✅ Backup completed successfully!")
-                        else:
-                            st.error("❌ Backup failed - check console for details")
-                    except Exception as e:
-                        st.error(f"❌ Backup error: {e}")
-        
-        with col2:
-            if st.button("📥 Restore from Cloud", use_container_width=True):
-                with st.spinner("Restoring data from cloud..."):
-                    try:
-                        from hybrid_db import hybrid_db
-                        if hybrid_db.sync_from_hf():
-                            st.success("✅ Restore completed successfully!")
-                            st.info("Please refresh the page to see restored data")
-                            if st.button("🔄 Refresh Now"):
-                                st.rerun()
-                        else:
-                            st.error("❌ Restore failed - check console for details")
-                    except Exception as e:
-                        st.error(f"❌ Restore error: {e}")
-        
-        st.caption("💡 First time? Click 'Backup to Cloud' to upload your existing data")
-
     # Try to import the teacher interface, fallback to basic
     try:
         from pages.teacher import teacher_interface
@@ -772,16 +727,6 @@ def render_student_review():
 def run_app():
     # Use robust database initialization
     ensure_db_initialized()
-    
-    # ADD THIS: Auto-restore from Hugging Face on startup
-    if 'auto_restored' not in st.session_state:
-        try:
-            from hybrid_db import hybrid_db
-            hybrid_db.auto_restore_on_startup()
-            st.session_state.auto_restored = True
-        except Exception as e:
-            st.warning(f"Cloud restore not available: {e}")
-            st.session_state.auto_restored = True
 
     top_logout()
 
@@ -797,3 +742,7 @@ def run_app():
             developer_dashboard()
         else:
             st.error("Unknown role. Please logout and log in again.")
+
+
+if __name__ == "__main__":
+    run_app().....this is my main.py
