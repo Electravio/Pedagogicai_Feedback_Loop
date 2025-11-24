@@ -1,46 +1,49 @@
 # pages/2_Student_Dashboard.py
 import streamlit as st
 import pandas as pd
-import os
+from db import save_chat, load_all_chats, get_student_courses, get_conn, ensure_db_initialized  # Changed from main to db
+from main import get_ai_response, analyze_student_state, classify_bloom, detect_cheating  # Keep AI functions from main
 from typing import List, Dict, Optional, Tuple
-from db import get_ai_response, save_chat, load_all_chats, analyze_student_state, classify_bloom, detect_cheating, \
-    get_student_courses, get_conn, init_db, upgrade_db, load_chat_memory_from_db
+from openai import OpenAI
 
-# MUST be at the very top - before any other Streamlit commands
-st.set_page_config(page_title="Student Dashboard", layout="wide")
+def _openai_key():
+    """Get OpenAI API key from environment or Streamlit secrets"""
+    return st.secrets.get("OPENAI_API_KEY", "")
+
 
 # Strict authentication check
 if "logged_in" not in st.session_state or st.session_state.get("role") != "student":
     st.error("Access denied. Please log in as a student.")
     if st.button("Go to Student Login"):
-        st.switch_page("pages/Student_Login.py")
+        st.switch_page("pages2/1_Student_Login.py")  # Fixed path
     st.stop()
 
-def get_ai_response_with_memory(messages: List[Dict]) -> Tuple[str, str]:
-    """Get AI response with chat memory context"""
-    try:
-        key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-        if not key:
-            return "(Simulated) Detailed answer with memory context.", ""
-        
-        import openai
-        client = openai.OpenAI(api_key=key)
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1500
-        )
-        
-        return response.choices[0].message.content.strip(), ""
-    except Exception as e:
-        return "", str(e)
+
+def load_course_memory_from_db(username, course_id):
+    """Load past Q&A by this student for this specific course."""
+    df = load_all_chats()
+    if df.empty:
+        return []
+
+    # filter: same student + same course
+    history = df[
+        (df["student"] == username) &
+        (df["course_id"] == course_id)
+    ].sort_values(by="id")
+
+    messages = []
+    for _, row in history.iterrows():
+        messages.append({"role": "user", "content": row["question"]})
+        messages.append({"role": "assistant", "content": row["ai_response"]})
+
+    return messages
+
 
 def student_dashboard():
-    # Initialize database at the start
-    init_db()
-    upgrade_db()
+    st.set_page_config(page_title="Student Dashboard", layout="wide")
+
+    # Initialize database at the start - use robust initialization
+    ensure_db_initialized()
 
     # Header with navigation
     col1, col2 = st.columns([4, 1])
@@ -51,7 +54,7 @@ def student_dashboard():
         if st.button("Logout"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
-            st.switch_page("pages/Student_Login.py")
+            st.switch_page("app.py")
 
     # Get student's enrolled courses
     student_courses = get_student_courses(st.session_state["username"])
@@ -98,11 +101,14 @@ def student_dashboard():
 
         language_override = st.selectbox(
             "Answer language",
-            ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic"],
+            ["Auto-detect", "English", "Spanish", "French", "Chinese", "Arabic", "Turkish", "Russian", "Hindi", "Portuguese", "German", "Italian", "Korean", "Japanese"],
             index=0,
             help="Choose the language for the AI response"
         )
 
+        # ------------------------------
+        # ASK AI BUTTON (INSIDE TAB)
+        # ------------------------------
         if st.button("🚀 Ask AI", type="primary"):
             if not question.strip():
                 st.warning("Please write a question.")
@@ -110,72 +116,79 @@ def student_dashboard():
                 st.warning("Please select a course.")
             else:
                 with st.spinner("🤔 Getting detailed AI answer..."):
-                    # Load chat memory from database
-                    chat_history = load_chat_memory_from_db(st.session_state["username"])
-                    
-                    # Build the enhanced prompt with course context
-                    course_context = f" (related to {selected_course})" if selected_course else ""
-                    
-                    # Prepare messages for OpenAI with memory
+
+                    # Load course memory
+                    course_memory = load_course_memory_from_db(
+                        st.session_state["username"],
+                        course_id
+                    )
+
+                    # Build GPT messages
                     messages = [
                         {
-                            "role": "system", 
-                            "content": f"""You are a helpful multilingual educational assistant. 
-                            CRITICAL INSTRUCTIONS:
-                            1. Detect the language the user is writing in and respond in the EXACT SAME LANGUAGE
-                            2. Provide comprehensive, well-structured, and detailed explanations
-                            3. Use proper formatting with paragraphs, bullet points, and examples when helpful
-                            4. Aim for 300-500 words for complex questions, 150-300 words for simpler ones
-                            5. Break down complex concepts into understandable parts
-                            6. Include practical examples and applications when relevant
-                            7. Use the student's chat history as context to provide consistent, personalized responses
-                            8. Build upon previous conversations and maintain continuity
-                            
-                            Course Context: This question is about {selected_course}
-                            Always prioritize clarity and educational value over brevity."""
+                            "role": "system",
+                            "content": (
+                                "You are a helpful educational tutoring assistant. "
+                                "Use ONLY this student's previous questions and answers "
+                                "from THIS SAME COURSE to understand their learning level. "
+                                "Do NOT reference or use memory from other courses. "
+                                "Continue the conversation naturally and consistently."
+                            )
                         }
                     ]
-                    
-                    # Add chat history for context
-                    messages.extend(chat_history)
-                    
-                    # Add current question
+
+                    # Add memory if exists
+                    if course_memory:
+                        messages += course_memory
+
+                    # Add new question
                     messages.append({"role": "user", "content": question})
-                    
-                    # Language override
+
+                    # Add language override
                     if language_override != "Auto-detect":
                         messages.append({
-                            "role": "system", 
-                            "content": f"IMPORTANT: Respond ONLY in {language_override}."
+                            "role": "system",
+                            "content": f"Respond ONLY in {language_override}."
                         })
 
-                    # Get AI response with memory context
-                    ai_answer, err = get_ai_response_with_memory(messages)
+                    # Call OpenAI
+                    try:
+                        key = _openai_key()
+                        client = OpenAI(api_key=key)
 
-                    if err:
-                        st.error(f"❌ AI error: {err}")
-                    else:
-                        # Run analyses for teacher
-                        analysis = analyze_student_state(question, ai_answer)
-                        bloom, bloom_reason = classify_bloom(question)
-                        cheating, cheat_reason = detect_cheating(question, ai_answer)
-
-                        # Save to database WITH COURSE ID and MEMORY
-                        save_chat(
-                            student=st.session_state["username"],
-                            question=question,
-                            ai_response=ai_answer,
-                            course_id=course_id,
-                            bloom_level=bloom,
-                            ai_analysis=analysis
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=messages,
+                            temperature=0.7
                         )
+                        ai_answer = response.choices[0].message.content
 
-                        st.success("✅ Answer saved! Your teacher will review it and may provide additional feedback.")
-                        st.markdown("### 🤖 AI Response")
-                        st.info(ai_answer)
+                    except Exception as e:
+                        st.error(f"❌ AI error: {e}")
+                        st.stop()
 
-                        # Show course context
-                        st.caption(f"📚 This question was saved under: {selected_course}")
+                    # Teacher analytics
+                    analysis = analyze_student_state(question, ai_answer)
+                    bloom, bloom_reason = classify_bloom(question)
+                    cheating, cheat_reason = detect_cheating(question, ai_answer)
+
+                    # Save chat - use the main save_chat function from db.py
+                    save_chat(
+                        student=st.session_state["username"],
+                        question=question,
+                        ai_response=ai_answer,
+                        course_id=course_id,
+                        teacher_feedback="",
+                        bloom_level=bloom,
+                        ai_analysis=analysis,
+                        cheating_flag="1" if cheating else "0"
+                    )
+
+                    # Display answer
+                    st.success("✅ Answer saved! Your teacher will review it.")
+                    st.markdown("### 🤖 AI Response")
+                    st.info(ai_answer)
+                    st.caption(f"📚 Saved under: {selected_course}")
 
     with tab_history:
         st.markdown("### 📖 Your Previous Q&A")
@@ -252,6 +265,7 @@ def student_dashboard():
             st.error(f"❌ Error loading chat history: {e}")
             st.info("No chat history available yet.")
 
+
 # ENHANCEMENT 1: Personal Learning Analytics
 def render_student_progress():
     st.header("📈 My Learning Journey")
@@ -293,6 +307,7 @@ def render_student_progress():
     # ENHANCEMENT 3: Learning Path Recommendations
     learning_recommendations()
 
+
 # ENHANCEMENT 2: Adaptive Question Assistant
 def enhanced_question_assistant():
     st.subheader("🤔 Smart Question Helper")
@@ -303,6 +318,7 @@ def enhanced_question_assistant():
     # This will be updated when the user types in the main question area
     st.info(
         "💡 Start typing your question above to get real-time feedback on question quality and improvement suggestions!")
+
 
 def analyze_question_quality(question):
     """AI analysis of question clarity and depth"""
@@ -315,6 +331,7 @@ def analyze_question_quality(question):
         score = min(10, len(question) // 10 + 5)
         feedback = "Good question! Clear and focused." if score > 7 else "Try to add more context for a better answer."
         return score, feedback
+
 
 def classify_question_complexity(question):
     """Categorize question cognitive level"""
@@ -332,6 +349,7 @@ def classify_question_complexity(question):
     else:
         return "Remember 🧠"
 
+
 # ENHANCEMENT 3: Learning Path Recommendations
 def learning_recommendations():
     st.header("🎯 Recommended Next Steps")
@@ -346,6 +364,7 @@ def learning_recommendations():
             if st.button("Start This", key=f"rec_{i}"):
                 st.session_state.current_learning_path = rec['title']
                 st.success(f"🎯 Started: {rec['title']}")
+
 
 def generate_personalized_recommendations(username):
     """Generate learning recommendations based on student's history"""
@@ -375,6 +394,7 @@ def generate_personalized_recommendations(username):
     ]
     return base_recommendations
 
+
 # Helper functions for analytics (placeholders - implement with real data)
 def get_student_question_count(username):
     """Get total questions asked by student"""
@@ -386,6 +406,7 @@ def get_student_question_count(username):
         return len(student_chats)
     except:
         return 0
+
 
 def calculate_knowledge_level(username):
     """Calculate student's knowledge level based on question complexity"""
@@ -399,15 +420,18 @@ def calculate_knowledge_level(username):
     else:
         return "Advanced"
 
+
 def get_strongest_area(username):
     """Determine student's strongest cognitive area"""
     # Placeholder - implement with actual Bloom's level analysis
     return "Analysis"
 
+
 def calculate_growth_rate(username):
     """Calculate learning growth rate"""
     # Placeholder - implement with time-based analysis
     return "+12%"
+
 
 def get_next_milestone(username):
     """Get next learning milestone"""
@@ -421,10 +445,12 @@ def get_next_milestone(username):
     else:
         return "Creative thinking"
 
+
 def calculate_skill_levels(username):
     """Calculate mastery levels for each Bloom's taxonomy skill"""
     # Placeholder - implement with actual question analysis
     return [85, 70, 60, 45, 30, 20]  # Remember, Understand, Apply, Analyze, Evaluate, Create
+
 
 # Add this helper function to load chats by course
 def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.DataFrame:
@@ -451,6 +477,7 @@ def load_chats_by_course(course_id: int, limit: Optional[int] = None) -> pd.Data
         return pd.DataFrame()
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     student_dashboard()
